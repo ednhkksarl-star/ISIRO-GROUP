@@ -1,0 +1,33 @@
+-- ============================================
+-- Migration: Rendre le bucket 'documents' public
+-- ============================================
+-- Cette migration documente la nécessité de rendre le bucket 'documents' public
+-- pour que les URLs publiques (.getPublicUrl()) fonctionnent correctement.
+--
+-- IMPORTANT: Cette migration ne peut pas être exécutée directement via SQL.
+-- Vous devez utiliser l'API Supabase ou le Dashboard pour modifier les paramètres du bucket.
+--
+-- INSTRUCTIONS:
+-- 1. Aller dans Supabase Dashboard → Storage → Buckets
+-- 2. Sélectionner le bucket 'documents'
+-- 3. Cliquer sur "Edit" (ou "Settings")
+-- 4. Changer "Public bucket" de "false" à "true"
+-- 5. Sauvegarder les modifications
+--
+-- POURQUOI RENDRE LE BUCKET PUBLIC?
+-- - Les fichiers sont déjà protégés par RLS (Row Level Security)
+-- - Les politiques RLS garantissent que seuls les utilisateurs autorisés peuvent accéder aux fichiers
+-- - Les URLs publiques (.getPublicUrl()) nécessitent un bucket public pour fonctionner
+-- - Cela simplifie le code (pas besoin d'URLs signées)
+--
+-- SÉCURITÉ:
+-- - Même si le bucket est public, les fichiers sont protégés par RLS
+-- - Les utilisateurs ne peuvent accéder qu'aux fichiers de leur entité
+-- - Les Super Admins peuvent accéder à tous les fichiers
+--
+-- NOTE: Si vous préférez garder le bucket privé, vous devrez modifier le code
+-- pour utiliser .createSignedUrl() au lieu de .getPublicUrl() partout où
+-- les fichiers sont affichés (tâches, courriers, archives, etc.)
+
+-- Cette migration est uniquement informative - aucune commande SQL n'est exécutée
+
