@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useId } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import Portal from '@/components/ui/Portal';
 
 interface ComboboxOption {
   value: string;
@@ -46,11 +47,11 @@ export default function Combobox({
   const [filteredOptions, setFilteredOptions] = useState<ComboboxOption[]>(options);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
 
-  // Trouver l'option sélectionnée
+  // Finding selected option
   const selectedOption = options.find((opt) => opt.value === value);
 
-  // Initialiser inputValue avec le label de l'option sélectionnée
   useEffect(() => {
     if (selectedOption) {
       setInputValue(selectedOption.label);
@@ -61,7 +62,6 @@ export default function Combobox({
     }
   }, [value, selectedOption, allowCustom]);
 
-  // Filtrer les options selon la saisie
   useEffect(() => {
     if (inputValue.trim() === '') {
       setFilteredOptions(options);
@@ -73,29 +73,41 @@ export default function Combobox({
     }
   }, [inputValue, options]);
 
-  // Fermer le dropdown si on clique en dehors
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
+    const updateCoords = () => {
+      if (isOpen && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setCoords({
+          top: rect.bottom,
+          left: rect.left,
+          width: rect.width
+        });
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (isOpen) {
+      updateCoords();
+      window.addEventListener('scroll', updateCoords, true);
+      window.addEventListener('resize', updateCoords);
+    }
+
+    return () => {
+      window.removeEventListener('scroll', updateCoords, true);
+      window.removeEventListener('resize', updateCoords);
+    };
+  }, [isOpen]);
+
+  // Handle outside click handled by backdrop in portal for better consistency
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInputValue(newValue);
     setIsOpen(true);
 
-    // Si la valeur correspond exactement à une option, la sélectionner
     const exactMatch = options.find((opt) => opt.label.toLowerCase() === newValue.toLowerCase());
     if (exactMatch) {
       onChange(exactMatch.value);
     } else if (allowCustom && onCustomValue) {
-      // Permettre la saisie manuelle
       onCustomValue(newValue);
     }
   };
@@ -162,47 +174,63 @@ export default function Combobox({
               'w-4 h-4 text-gray-400 transition-transform',
               isOpen && 'rotate-180'
             )}
+            onClick={() => !disabled && setIsOpen(!isOpen)}
           />
         </div>
       </div>
 
       {isOpen && !disabled && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-auto">
-          {filteredOptions.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-gray-500 text-center">
-              {allowCustom ? 'Aucun résultat. Saisissez une valeur personnalisée.' : 'Aucun résultat'}
-            </div>
-          ) : (
-            filteredOptions.map((option) => (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[9998]"
+            onClick={() => setIsOpen(false)}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              top: `${coords.top}px`,
+              left: `${coords.left}px`,
+              width: `${coords.width}px`,
+              zIndex: 9999
+            }}
+            className="mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-auto animate-in fade-in slide-in-from-top-1 duration-200"
+          >
+            {filteredOptions.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                {allowCustom ? 'Aucun résultat. Saisissez une valeur personnalisée.' : 'Aucun résultat'}
+              </div>
+            ) : (
+              filteredOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleSelectOption(option)}
+                  className={cn(
+                    'w-full text-left px-4 py-2 hover:bg-primary/5 transition-colors',
+                    value === option.value && 'bg-primary/10 text-primary font-medium'
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))
+            )}
+            {allowCustom && inputValue.trim() !== '' && !selectedOption && (
               <button
-                key={option.value}
                 type="button"
-                onClick={() => handleSelectOption(option)}
-                className={cn(
-                  'w-full text-left px-4 py-2 hover:bg-primary/5 transition-colors',
-                  value === option.value && 'bg-primary/10 text-primary font-medium'
-                )}
+                onClick={() => {
+                  if (onCustomValue) {
+                    onCustomValue(inputValue);
+                    onChange(inputValue);
+                  }
+                  setIsOpen(false);
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-primary/5 transition-colors border-t border-gray-200 text-primary font-medium"
               >
-                {option.label}
+                Utiliser &quot;{inputValue}&quot;
               </button>
-            ))
-          )}
-          {allowCustom && inputValue.trim() !== '' && !selectedOption && (
-            <button
-              type="button"
-              onClick={() => {
-                if (onCustomValue) {
-                  onCustomValue(inputValue);
-                  onChange(inputValue);
-                }
-                setIsOpen(false);
-              }}
-              className="w-full text-left px-4 py-2 hover:bg-primary/5 transition-colors border-t border-gray-200 text-primary font-medium"
-            >
-              Utiliser &quot;{inputValue}&quot;
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        </Portal>
       )}
     </div>
   );

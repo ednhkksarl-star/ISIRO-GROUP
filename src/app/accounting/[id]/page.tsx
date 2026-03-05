@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import BackButton from '@/components/ui/BackButton';
@@ -20,6 +20,7 @@ function AccountingEntryDetailContent() {
   const params = useParams();
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const [entry, setEntry] = useState<AccountingEntry | null>(null);
   const [entityName, setEntityName] = useState<string>('');
   const [loading, setLoading] = useState(true);

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import { Upload, X } from 'lucide-react';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useEntity } from '@/hooks/useEntity';
@@ -26,6 +26,7 @@ const CATEGORIES = [
 export default function NewExpensePage() {
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const { selectedEntityId, setSelectedEntityId } = useEntity();
   const [loading, setLoading] = useState(false);

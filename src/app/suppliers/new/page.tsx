@@ -1,86 +1,39 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
-import { useAuth } from '@/components/providers/Providers';
-import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
-import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
-import Input from '@/components/ui/Input';
-import BackButton from '@/components/ui/BackButton';
-import { useEntity } from '@/hooks/useEntity';
-import EntitySelector from '@/components/entity/EntitySelector';
-import { getEntityUUID } from '@/utils/entityHelpers';
+import { X } from 'lucide-react';
+import DirectoryForm from '@/components/directory/DirectoryForm';
 
 function NewSupplierPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { profile } = useAuth();
-  const { selectedEntityId, isGroupView } = useEntity();
-  const supabase = createSupabaseClient();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({ name: '', phone: '', email: '', address: '', notes: '' });
-  const [localEntityId, setLocalEntityId] = useState<string | null>(null);
-
-  const entityId = searchParams?.get('entity') || localEntityId || (isGroupView ? null : selectedEntityId) || profile?.entity_id;
-  const canSelectEntity = profile?.role === 'SUPER_ADMIN_GROUP' || profile?.role === 'ADMIN_ENTITY' || (profile?.entity_ids && profile.entity_ids.length > 1);
-
-  useEffect(() => {
-    if (searchParams?.get('entity')) setLocalEntityId(searchParams.get('entity'));
-    else if (selectedEntityId && !isGroupView) setLocalEntityId(selectedEntityId);
-    else if (profile?.entity_id) setLocalEntityId(profile.entity_id);
-    else if (profile?.entity_ids?.length === 1) setLocalEntityId(profile.entity_ids[0]);
-  }, [searchParams, selectedEntityId, isGroupView, profile?.entity_id, profile?.entity_ids]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const uuid = await getEntityUUID(entityId ?? null);
-    if (!uuid) { toast.error('Veuillez sélectionner une entité'); return; }
-    setLoading(true);
-    try {
-      const { error } = await (supabase.from('suppliers') as any).insert({
-        entity_id: uuid,
-        name: formData.name.trim(),
-        phone: formData.phone.trim() || null,
-        email: formData.email.trim() || null,
-        address: formData.address.trim() || null,
-        notes: formData.notes.trim() || null,
-        is_active: true,
-        created_by: profile?.id || null,
-      });
-      if (error) throw error;
-      toast.success('Fournisseur créé');
-      router.push('/repertoire');
-    } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de la création');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const entityId = searchParams?.get('entity') || undefined;
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto space-y-4">
-        <BackButton href="/repertoire" />
-        <h1 className="text-2xl font-bold text-text">Nouveau fournisseur</h1>
-        {canSelectEntity && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-text-light">Entité :</span>
-            <EntitySelector selectedEntityId={localEntityId} onSelectEntity={setLocalEntityId} userRole={profile?.role || ''} userEntityIds={profile?.entity_ids || []} />
+      <div className="max-w-[1200px] mx-auto space-y-8 p-4 sm:p-0 animate-in fade-in duration-700">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-8">
+          <div className="space-y-1">
+            <h1 className="text-4xl font-black tracking-tight text-slate-900">Nouveau Fournisseur</h1>
+            <p className="text-slate-500 font-medium text-sm">Ajouter une nouvelle fiche fournisseur au répertoire</p>
           </div>
-        )}
-        <Card>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input label="Nom" value={formData.name} onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))} required />
-            <Input label="Téléphone" value={formData.phone} onChange={(e) => setFormData((p) => ({ ...p, phone: e.target.value }))} />
-            <Input label="Email" type="email" value={formData.email} onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))} />
-            <div><label className="block text-sm font-medium text-text mb-1">Adresse</label><textarea value={formData.address} onChange={(e) => setFormData((p) => ({ ...p, address: e.target.value }))} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary" rows={2} /></div>
-            <div><label className="block text-sm font-medium text-text mb-1">Notes</label><textarea value={formData.notes} onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value }))} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary" rows={2} /></div>
-            <div className="flex gap-2"><Button type="submit" loading={loading}>Enregistrer</Button><Button type="button" variant="secondary" onClick={() => router.push('/repertoire')}>Annuler</Button></div>
-          </form>
-        </Card>
+          <button
+            onClick={() => router.back()}
+            className="px-6 py-3 bg-slate-100 text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2"
+          >
+            <X className="w-4 h-4" /> Retour au répertoire
+          </button>
+        </div>
+
+        <div className="max-w-4xl mx-auto glass-card border-none p-10 ring-1 ring-slate-100">
+          <DirectoryForm
+            initialType="suppliers"
+            initialEntityId={entityId}
+            onCancel={() => router.back()}
+          />
+        </div>
       </div>
     </AppLayout>
   );
@@ -88,7 +41,13 @@ function NewSupplierPageContent() {
 
 export default function NewSupplierPage() {
   return (
-    <Suspense fallback={<AppLayout><div className="flex justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent" /></div></AppLayout>}>
+    <Suspense fallback={
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AppLayout>
+    }>
       <NewSupplierPageContent />
     </Suspense>
   );

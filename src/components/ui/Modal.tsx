@@ -37,7 +37,7 @@ export default function Modal({
   if (!isOpen) return null;
 
   const sizeClasses = {
-    sm: 'max-w-md',
+    sm: 'max-w-sm',
     md: 'max-w-2xl',
     lg: 'max-w-4xl',
     xl: 'max-w-6xl',
@@ -50,25 +50,25 @@ export default function Modal({
     >
       <div
         className={cn(
-          'bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-scale-in',
+          'bg-white rounded-2xl border-2 border-emerald-100 shadow-xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-scale-in',
           sizeClasses[size]
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="sticky top-0 bg-white border-b border-gray-200 p-4 sm:p-6 flex justify-between items-center z-10">
+          <div className="sticky top-0 bg-white border-b-2 border-emerald-50 p-4 sm:p-5 flex justify-between items-center z-10">
             {title && (
-              <h2 className="text-lg sm:text-2xl font-bold text-gray-800">
+              <h2 className="text-lg sm:text-xl font-black text-emerald-950 uppercase tracking-tight">
                 {title}
               </h2>
             )}
             {showCloseButton && (
               <button
                 onClick={onClose}
-                className="text-gray-500 hover:text-gray-700 text-xl sm:text-2xl transition-colors p-2 hover:bg-gray-100 rounded-full"
+                className="text-emerald-400 hover:text-emerald-600 transition-colors p-2 hover:bg-emerald-50 rounded-xl"
               >
-                <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                <X className="w-5 h-5" />
               </button>
             )}
           </div>
@@ -79,7 +79,7 @@ export default function Modal({
 
         {/* Footer */}
         {footer && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 sm:p-6 flex justify-end gap-3">
+          <div className="sticky bottom-0 bg-white border-t-2 border-emerald-50 p-4 sm:p-5 flex justify-end gap-3">
             {footer}
           </div>
         )}

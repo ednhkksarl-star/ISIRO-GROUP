@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
@@ -15,6 +15,7 @@ export default function EditClientPage() {
   const router = useRouter();
   const supabase = createSupabaseClient();
   const [loading, setLoading] = useState(false);
+  const toast = useToast();
   const [fetching, setFetching] = useState(true);
   const [formData, setFormData] = useState({ name: '', phone: '', email: '', address: '', notes: '' });
 

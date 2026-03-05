@@ -5,16 +5,16 @@ import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
-import Card from '@/components/ui/Card';
-import BackButton from '@/components/ui/BackButton';
-import { Lock, Eye, EyeOff } from 'lucide-react';
+import { Lock, Eye, EyeOff, Settings, ShieldCheck, Save } from 'lucide-react';
+import SettingsTabs from '@/components/settings/SettingsTabs';
+import { cn } from '@/utils/cn';
 
 export default function SecurityPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [loading, setLoading] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -53,7 +53,7 @@ export default function SecurityPage() {
       newErrors.confirmPassword = 'Les mots de passe ne correspondent pas';
     }
 
-    if (formData.currentPassword === formData.newPassword) {
+    if (formData.currentPassword === formData.newPassword && formData.currentPassword !== '') {
       newErrors.newPassword = 'Le nouveau mot de passe doit être différent de l\'ancien';
     }
 
@@ -95,7 +95,7 @@ export default function SecurityPage() {
       if (updateError) throw updateError;
 
       toast.success('Mot de passe modifié avec succès');
-      
+
       // Réinitialiser le formulaire
       setFormData({
         currentPassword: '',
@@ -113,146 +113,161 @@ export default function SecurityPage() {
 
   return (
     <AppLayout>
-      <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 px-4 sm:px-0">
-        <BackButton />
+      <div className="space-y-6">
+        {/* Header Block: Vibrant Minimalist */}
+        <div className="bg-white border-2 border-emerald-100 p-8 sm:p-10 rounded-[2rem] relative overflow-hidden group hover:border-emerald-300 transition-all duration-700 shadow-sm">
+          <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-50 rounded-full opacity-50 group-hover:scale-110 transition-transform duration-700" />
+          <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-yellow-50 rounded-full opacity-30 group-hover:scale-125 transition-transform duration-700" />
 
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-text">Sécurité</h1>
-          <p className="text-text-light mt-1 text-sm sm:text-base">
-            Modifier votre mot de passe
-          </p>
+          <div className="relative z-10 space-y-4">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
+              <Settings className="w-4 h-4 text-emerald-600" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Paramètres</span>
+            </div>
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-emerald-950 uppercase leading-none">Sécurité</h1>
+              <div className="h-1.5 w-24 bg-yellow-400 mt-4 rounded-full" />
+            </div>
+            <p className="text-emerald-800/60 text-sm font-bold max-w-md">
+              Protégez l'accès à votre compte en mettant régulièrement à jour votre mot de passe.
+            </p>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-          <Card>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Mot de passe actuel *
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showCurrentPassword ? 'text' : 'password'}
-                    value={formData.currentPassword}
-                    onChange={(e) => {
-                      setFormData({ ...formData, currentPassword: e.target.value });
-                      if (errors.currentPassword) {
-                        setErrors({ ...errors, currentPassword: undefined });
-                      }
-                    }}
-                    className={errors.currentPassword ? 'border-error' : ''}
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  >
-                    {showCurrentPassword ? (
-                      <EyeOff className="w-5 h-5" />
-                    ) : (
-                      <Eye className="w-5 h-5" />
-                    )}
-                  </button>
+        {/* Persisted Navigation Tabs */}
+        <SettingsTabs />
+
+        <div className="max-w-2xl mx-auto">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="bg-white border-2 border-emerald-100 p-8 rounded-[2rem] relative overflow-hidden transition-all shadow-sm">
+              <div className="relative z-10 space-y-8">
+
+                {/* Security Header */}
+                <div className="flex items-center gap-4 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                  <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-emerald-600 border border-emerald-100 shadow-sm">
+                    <ShieldCheck className="w-6 h-6 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-tight text-emerald-950">Changement de mot de passe</h2>
+                    <p className="text-[10px] font-bold text-emerald-800/60">Utilisez un mot de passe complexe pour plus de sécurité.</p>
+                  </div>
                 </div>
-                {errors.currentPassword && (
-                  <p className="mt-1 text-sm text-error">{errors.currentPassword}</p>
-                )}
+
+                <div className="space-y-6">
+                  {/* Current Password */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-emerald-900/60 ml-1">Mot de passe actuel</label>
+                    <div className="relative group">
+                      <input
+                        type={showCurrentPassword ? 'text' : 'password'}
+                        value={formData.currentPassword}
+                        onChange={(e) => {
+                          setFormData({ ...formData, currentPassword: e.target.value });
+                          if (errors.currentPassword) setErrors({ ...errors, currentPassword: undefined });
+                        }}
+                        className={cn(
+                          "w-full px-5 py-4 bg-white border-2 rounded-2xl text-sm font-black text-emerald-950 focus:outline-none transition-all placeholder:text-emerald-100",
+                          errors.currentPassword ? "border-rose-300 bg-rose-50/10" : "border-emerald-100 focus:border-emerald-400"
+                        )}
+                        placeholder="••••••••"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-300 hover:text-emerald-600 transition-colors"
+                      >
+                        {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                    {errors.currentPassword && <p className="text-[10px] font-bold text-rose-500 ml-1 uppercase tracking-wider">{errors.currentPassword}</p>}
+                  </div>
+
+                  <div className="h-px bg-emerald-50" />
+
+                  {/* New Password */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-emerald-900/60 ml-1">Nouveau mot de passe</label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={formData.newPassword}
+                        onChange={(e) => {
+                          setFormData({ ...formData, newPassword: e.target.value });
+                          if (errors.newPassword) setErrors({ ...errors, newPassword: undefined });
+                        }}
+                        className={cn(
+                          "w-full px-5 py-4 bg-white border-2 rounded-2xl text-sm font-black text-emerald-950 focus:outline-none transition-all placeholder:text-emerald-100",
+                          errors.newPassword ? "border-rose-300 bg-rose-50/10" : "border-emerald-100 focus:border-emerald-400"
+                        )}
+                        placeholder="••••••••"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-300 hover:text-emerald-600 transition-colors"
+                      >
+                        {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                    {errors.newPassword && <p className="text-[10px] font-bold text-rose-500 ml-1 uppercase tracking-wider">{errors.newPassword}</p>}
+                    <p className="text-[9px] font-bold text-emerald-800/40 ml-1 leading-relaxed uppercase tracking-tighter">
+                      8+ caractères, majuscule, minuscule et chiffre requis.
+                    </p>
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-emerald-900/60 ml-1">Confirmer le nouveau mot de passe</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={formData.confirmPassword}
+                        onChange={(e) => {
+                          setFormData({ ...formData, confirmPassword: e.target.value });
+                          if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: undefined });
+                        }}
+                        className={cn(
+                          "w-full px-5 py-4 bg-white border-2 rounded-2xl text-sm font-black text-emerald-950 focus:outline-none transition-all placeholder:text-emerald-100",
+                          errors.confirmPassword ? "border-rose-300 bg-rose-50/10" : "border-emerald-100 focus:border-emerald-400"
+                        )}
+                        placeholder="••••••••"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-300 hover:text-emerald-600 transition-colors"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                    {errors.confirmPassword && <p className="text-[10px] font-bold text-rose-500 ml-1 uppercase tracking-wider">{errors.confirmPassword}</p>}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nouveau mot de passe *
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showNewPassword ? 'text' : 'password'}
-                    value={formData.newPassword}
-                    onChange={(e) => {
-                      setFormData({ ...formData, newPassword: e.target.value });
-                      if (errors.newPassword) {
-                        setErrors({ ...errors, newPassword: undefined });
-                      }
-                    }}
-                    className={errors.newPassword ? 'border-error' : ''}
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  >
-                    {showNewPassword ? (
-                      <EyeOff className="w-5 h-5" />
-                    ) : (
-                      <Eye className="w-5 h-5" />
-                    )}
-                  </button>
-                </div>
-                {errors.newPassword && (
-                  <p className="mt-1 text-sm text-error">{errors.newPassword}</p>
-                )}
-                <p className="mt-1 text-xs text-text-light">
-                  Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule et un chiffre.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Confirmer le nouveau mot de passe *
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    value={formData.confirmPassword}
-                    onChange={(e) => {
-                      setFormData({ ...formData, confirmPassword: e.target.value });
-                      if (errors.confirmPassword) {
-                        setErrors({ ...errors, confirmPassword: undefined });
-                      }
-                    }}
-                    className={errors.confirmPassword ? 'border-error' : ''}
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  >
-                    {showConfirmPassword ? (
-                      <EyeOff className="w-5 h-5" />
-                    ) : (
-                      <Eye className="w-5 h-5" />
-                    )}
-                  </button>
-                </div>
-                {errors.confirmPassword && (
-                  <p className="mt-1 text-sm text-error">{errors.confirmPassword}</p>
-                )}
+              {/* Action Buttons */}
+              <div className="mt-12 pt-8 border-t-2 border-emerald-50 flex gap-4 justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => router.back()}
+                  className="px-8"
+                >
+                  Annuler
+                </Button>
+                <Button
+                  type="submit"
+                  loading={loading}
+                  disabled={loading}
+                  icon={<Lock className="w-4 h-4 stroke-[3]" />}
+                  className="px-10"
+                >
+                  Modifier
+                </Button>
               </div>
             </div>
-          </Card>
-
-          <div className="flex flex-col sm:flex-row justify-end gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => router.back()}
-              className="w-full sm:w-auto"
-            >
-              Annuler
-            </Button>
-            <Button
-              type="submit"
-              loading={loading}
-              disabled={loading}
-              icon={<Lock className="w-5 h-5" />}
-              className="w-full sm:w-auto"
-            >
-              Modifier le mot de passe
-            </Button>
-          </div>
-        </form>
+          </form>
+        </div>
       </div>
     </AppLayout>
   );

@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import { Plus, Trash2, X, ArrowLeft } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -45,6 +45,7 @@ function EditInvoicePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const { selectedEntityId, setSelectedEntityId } = useEntity();
   const { activeEntityId } = useEntityContext();

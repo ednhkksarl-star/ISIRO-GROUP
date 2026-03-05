@@ -5,43 +5,48 @@ import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { Plus, Search, Mail, Inbox, Send, Edit, Trash2, User, Eye } from 'lucide-react';
+import {
+  Plus, Search, Mail, Inbox, Send, Edit, Trash2,
+  Eye, Filter, ArrowRight, Clock, CheckCircle2,
+  Archive, FileText, LayoutGrid, List as ListIcon, User
+} from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
-import BackButton from '@/components/ui/BackButton';
 import Pagination from '@/components/ui/Pagination';
 import ConfirmModal from '@/components/ui/ConfirmModal';
+import Sheet from '@/components/ui/Sheet';
+import MailForm from '@/components/mail/MailForm';
 import { useModal } from '@/hooks/useModal';
 import { useEntity } from '@/hooks/useEntity';
 import { normalizeEntityIds, getEntityUUID } from '@/utils/entityHelpers';
 import UserAssignmentModal from '@/components/mail/UserAssignmentModal';
+import { cn } from '@/utils/cn';
 import type { Database } from '@/types/database.types';
 
 type MailItem = Database['public']['Tables']['mail_items']['Row'];
 
-const TYPE_LABELS: Record<string, string> = {
-  incoming: 'Entrant',
-  outgoing: 'Sortant',
-  internal: 'Interne',
+const TYPE_CONFIG: Record<string, { label: string, icon: any, color: string, bg: string }> = {
+  incoming: { label: 'Entrant', icon: Inbox, color: 'text-blue-600', bg: 'bg-blue-50' },
+  outgoing: { label: 'Sortant', icon: Send, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  internal: { label: 'Interne', icon: Mail, color: 'text-amber-600', bg: 'bg-amber-50' },
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  registered: 'Enregistré',
-  assigned: 'Affecté',
-  processing: 'En traitement',
-  validated: 'Validé',
-  archived: 'Archivé',
+const STATUS_CONFIG: Record<string, { label: string, color: string, bg: string }> = {
+  registered: { label: 'Enregistré', color: 'text-slate-600', bg: 'bg-slate-100' },
+  assigned: { label: 'Affecté', color: 'text-indigo-600', bg: 'bg-indigo-50' },
+  processing: { label: 'En traitement', color: 'text-blue-600', bg: 'bg-blue-50' },
+  validated: { label: 'Validé', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  archived: { label: 'Archivé', color: 'text-slate-400', bg: 'bg-slate-50 border-slate-100' },
 };
 
-// Logique de workflow des statuts : définit les transitions autorisées
 const STATUS_WORKFLOW: Record<string, string[]> = {
-  registered: ['assigned', 'processing', 'archived'], // Depuis "Enregistré", on peut aller à "Affecté", "En traitement" ou "Archivé"
-  assigned: ['processing', 'registered', 'archived'], // Depuis "Affecté", on peut aller à "En traitement", "Enregistré" ou "Archivé"
-  processing: ['validated', 'assigned', 'archived'], // Depuis "En traitement", on peut aller à "Validé", "Affecté" ou "Archivé"
-  validated: ['archived', 'processing'], // Depuis "Validé", on peut aller à "Archivé" ou "En traitement"
-  archived: [], // Depuis "Archivé", aucun changement de statut autorisé
+  registered: ['assigned', 'processing', 'archived'],
+  assigned: ['processing', 'registered', 'archived'],
+  processing: ['validated', 'assigned', 'archived'],
+  validated: ['archived', 'processing'],
+  archived: [],
 };
 
 interface User {
@@ -52,271 +57,76 @@ interface User {
 
 function CourriersPageContent() {
   const { profile } = useAuth();
+  const toast = useToast();
   const { selectedEntityId, setSelectedEntityId, isGroupView } = useEntity();
   const searchParams = useSearchParams();
   const [mailItems, setMailItems] = useState<MailItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [users, setUsers] = useState<User[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const itemsPerPage = 10;
+  const itemsPerPage = 8;
   const supabase = createSupabaseClient();
+
   const deleteModal = useModal();
-  const [mailToDelete, setMailToDelete] = useState<string | null>(null);
   const assignmentModal = useModal();
+  const sheet = useModal();
+
+  const [mailToDelete, setMailToDelete] = useState<string | null>(null);
   const [mailToAssign, setMailToAssign] = useState<string | null>(null);
 
-  // Utiliser l'entité depuis les paramètres de requête ou selectedEntityId (qui peut être null pour vue consolidée)
   const entityId = searchParams?.get('entity') || (isGroupView ? null : selectedEntityId);
-
-  // Synchroniser le paramètre URL avec le contexte selectedEntityId
-  useEffect(() => {
-    const entityParam = searchParams?.get('entity');
-    if (entityParam && (profile?.role === 'SUPER_ADMIN_GROUP' || profile?.role === 'ADMIN_ENTITY')) {
-      // Convertir le paramètre (code ou UUID) en UUID avant de le stocker dans le contexte
-      getEntityUUID(entityParam).then((uuid) => {
-        if (uuid) {
-          setSelectedEntityId(uuid);
-        }
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams?.get('entity')]);
 
   useEffect(() => {
     fetchMailItems();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, entityId]);
 
-  // Charger les utilisateurs après avoir chargé les courriers
   useEffect(() => {
-    if (!loading) {
-      fetchUsers();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!loading) fetchUsers();
   }, [loading, entityId]);
 
   const fetchUsers = async () => {
     try {
-      setLoadingUsers(true);
-      
-      // Pour les super admins en vue consolidée, charger TOUS les utilisateurs actifs
-      if (!entityId && (profile?.role === 'SUPER_ADMIN_GROUP' || profile?.role === 'ADMIN_ENTITY')) {
-        const { data, error } = await supabase
-          .from('users')
-          .select('id, full_name, email')
-          .eq('is_active', true)
-          .order('full_name', { ascending: true });
-
-        if (error) throw error;
-        setUsers(data || []);
-        return;
-      }
-      
-      // Si entityId est null (vue consolidée), charger tous les utilisateurs des entités du profil
-      if (!entityId) {
-        if (profile?.entity_ids && profile.entity_ids.length > 0) {
-          const uuids = await normalizeEntityIds(profile.entity_ids);
-          if (uuids.length > 0) {
-            const { data, error } = await supabase
-              .from('users')
-              .select('id, full_name, email')
-              .eq('is_active', true)
-              .in('entity_id', uuids)
-              .order('full_name', { ascending: true });
-
-            if (error) throw error;
-            setUsers(data || []);
-            return;
-          }
-        }
-        // Si pas d'entités, charger tous les utilisateurs actifs
-        const { data, error } = await supabase
-          .from('users')
-          .select('id, full_name, email')
-          .eq('is_active', true)
-          .order('full_name', { ascending: true });
-
-        if (error) throw error;
-        setUsers(data || []);
-        return;
-      }
-
-      // Sinon, charger les utilisateurs de l'entité spécifiée
-      const uuid = await getEntityUUID(entityId);
-      if (!uuid) {
-        setUsers([]);
-        return;
-      }
-      
-      // Récupérer les utilisateurs de l'entité
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, full_name, email, entity_id, entity_ids')
-        .eq('is_active', true)
-        .order('full_name', { ascending: true });
-
+      let query = supabase.from('users').select('id, full_name, email').eq('is_active', true);
+      const { data, error } = await query;
       if (error) throw error;
-
-      // Filtrer les utilisateurs qui appartiennent à cette entité
-      const filteredUsers: User[] = (data || []).filter((user: any) => {
-        if (user.entity_id === uuid) {
-          return true;
-        }
-        if (user.entity_ids && Array.isArray(user.entity_ids)) {
-          return user.entity_ids.some((id: any) => String(id) === String(uuid));
-        }
-        return false;
-      }).map((user: any) => ({
-        id: user.id,
-        full_name: user.full_name,
-        email: user.email,
-      }));
-
-      // Récupérer aussi les IDs des utilisateurs assignés aux courriers affichés
-      // pour s'assurer qu'ils sont inclus même s'ils ne sont pas de l'entité courante
-      const assignedUserIds = new Set<string>();
-      mailItems.forEach((item) => {
-        if (item.assigned_to) {
-          assignedUserIds.add(item.assigned_to);
-        }
-      });
-
-      // Si des utilisateurs assignés ne sont pas dans la liste, les récupérer
-      if (assignedUserIds.size > 0) {
-        const missingUserIds = Array.from(assignedUserIds).filter(
-          (userId) => !filteredUsers.some((u) => u.id === userId)
-        );
-
-        if (missingUserIds.length > 0) {
-          const { data: missingUsers, error: missingError } = await supabase
-            .from('users')
-            .select('id, full_name, email')
-            .eq('is_active', true)
-            .in('id', missingUserIds);
-
-          if (!missingError && missingUsers) {
-            filteredUsers.push(...missingUsers);
-          }
-        }
-      }
-
-      setUsers(filteredUsers);
-    } catch (error: any) {
-      console.error('Erreur lors du chargement des utilisateurs:', error);
-      setUsers([]);
-    } finally {
-      setLoadingUsers(false);
+      setUsers(data || []);
+    } catch (error) {
+      console.error('Erreur chargement utilisateurs:', error);
     }
   };
 
   const fetchMailItems = async () => {
     try {
       setLoading(true);
-      let query = supabase
-        .from('mail_items')
-        .select('*')
-        .order('created_at', { ascending: false });
+      let query = supabase.from('mail_items').select('*').order('created_at', { ascending: false });
 
-      // Système intelligent : filtrer automatiquement selon le rôle et l'entité
-      // Super Admin et Admin Entity en vue consolidée (entityId = null) : voir toutes les données
-      if (profile && (profile.role === 'SUPER_ADMIN_GROUP' || profile.role === 'ADMIN_ENTITY')) {
-        // Si une entité spécifique est sélectionnée, filtrer par cette entité
-        if (entityId) {
-          const uuid = await getEntityUUID(entityId);
-          if (uuid) {
-            query = query.eq('entity_id', uuid);
-          } else {
-            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-          }
+      if (profile?.role !== 'SUPER_ADMIN_GROUP' && profile?.role !== 'ADMIN_ENTITY') {
+        const entityUUIDs = profile?.entity_ids ? await normalizeEntityIds(profile.entity_ids) : [];
+        if (profile?.entity_id) {
+          const mainUuid = await getEntityUUID(profile.entity_id);
+          if (mainUuid && !entityUUIDs.includes(mainUuid)) entityUUIDs.push(mainUuid);
         }
-        // Sinon (vue consolidée, entityId = null), pas de filtre = voir toutes les données
-      } else if (profile) {
-        // Pour tous les autres utilisateurs (MANAGER_ENTITY, ACCOUNTANT, SECRETARY, AGENT_ACCUEIL, etc.),
-        if (profile.role !== 'SUPER_ADMIN_GROUP' && profile.role !== 'ADMIN_ENTITY') {
-          // Construire les conditions pour les courriers accessibles
-          // Les utilisateurs non-admin doivent voir :
-          // 1. Tous les courriers de leur entité (peu importe à qui ils sont assignés)
-          // 2. OU les courriers assignés à eux (même s'ils sont d'une autre entité)
-          // 3. OU les courriers orientés vers eux
-          // 4. OU les courriers créés par eux
-          
-          console.log('🔍 [fetchMailItems] Profil utilisateur:', {
-            role: profile.role,
-            id: profile.id,
-            entity_id: profile.entity_id,
-            entity_ids: profile.entity_ids,
-          });
-          
-          // Récupérer les UUIDs des entités de l'utilisateur
-          let entityUUIDs: string[] = [];
-          if (profile.entity_ids && profile.entity_ids.length > 0) {
-            entityUUIDs = await normalizeEntityIds(profile.entity_ids);
-            console.log('🔍 [fetchMailItems] Entity IDs normalisés:', entityUUIDs);
-          } else if (profile.entity_id) {
-            const uuid = await getEntityUUID(profile.entity_id);
-            console.log('🔍 [fetchMailItems] Entity ID converti:', { entity_id: profile.entity_id, uuid });
-            if (uuid) {
-              entityUUIDs = [uuid];
-            }
-          }
-          
-          // Construire les conditions OR
-          const conditions: string[] = [];
-          
-          // Condition 1 : Courriers de leur(s) entité(s) - une condition par entité
-          for (const uuid of entityUUIDs) {
-            conditions.push(`entity_id.eq.${uuid}`);
-          }
-          
-          // Conditions 2-4 : Courriers assignés, orientés vers, ou créés par l'utilisateur
-          if (profile.id) {
-            conditions.push(`assigned_to.eq.${profile.id}`);
-            conditions.push(`oriented_to_user_id.eq.${profile.id}`);
-            conditions.push(`created_by.eq.${profile.id}`);
-          }
-          
-          console.log('🔍 [fetchMailItems] Conditions OR construites:', conditions);
-          
-          // Combiner toutes les conditions avec OR
-          if (conditions.length > 0) {
-            const orCondition = conditions.join(',');
-            console.log('🔍 [fetchMailItems] Condition OR finale:', orCondition);
-            query = query.or(orCondition);
-          } else {
-            // Si aucune condition n'est disponible, ne rien afficher
-            console.warn('⚠️ [fetchMailItems] Aucune condition disponible, aucun courrier ne sera affiché');
-            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-          }
+
+        const conditions = entityUUIDs.map(uuid => `entity_id.eq.${uuid}`);
+        if (profile?.id) {
+          conditions.push(`assigned_to.eq.${profile.id}`);
+          conditions.push(`oriented_to_user_id.eq.${profile.id}`);
+          conditions.push(`created_by.eq.${profile.id}`);
         }
+        if (conditions.length > 0) query = query.or(conditions.join(','));
+      } else if (entityId) {
+        const uuid = await getEntityUUID(entityId);
+        if (uuid) query = query.eq('entity_id', uuid);
       }
-
-      // Log de la requête complète avant exécution
-      console.log('🔍 [fetchMailItems] Exécution de la requête...');
 
       const { data, error } = await query;
-
-      if (error) {
-        console.error('❌ [fetchMailItems] Erreur Supabase:', error);
-        console.error('❌ [fetchMailItems] Détails de l\'erreur:', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        });
-        throw error;
-      }
-      
-      console.log('✅ [fetchMailItems] Courriers chargés:', data?.length || 0, data);
-      
-      // Note: entityUUIDs n'est pas accessible ici car il est dans un scope différent
-      // On pourrait ajouter un test supplémentaire, mais cela compliquerait le code
-      
+      if (error) throw error;
       setMailItems(data || []);
-    } catch (error: any) {
+    } catch (error) {
       toast.error('Erreur lors du chargement des courriers');
-      console.error('❌ [fetchMailItems] Erreur complète:', error);
     } finally {
       setLoading(false);
     }
@@ -324,125 +134,73 @@ function CourriersPageContent() {
 
   const updateStatus = async (id: string, newStatus: string) => {
     try {
-      const mailItem = mailItems.find((item) => item.id === id);
-      if (!mailItem) {
-        toast.error('Courrier introuvable');
-        return;
-      }
-
-      // Vérifier si la transition est autorisée
-      const allowedStatuses = STATUS_WORKFLOW[mailItem.status] || [];
-      if (newStatus !== mailItem.status && !allowedStatuses.includes(newStatus)) {
-        toast.error(`Transition non autorisée : ${STATUS_LABELS[mailItem.status]} → ${STATUS_LABELS[newStatus]}`);
-        return;
-      }
-
-      const { error } = await (supabase.from('mail_items') as any)
-        .update({ status: newStatus as any })
-        .eq('id', id);
-
+      const { error } = await (supabase.from('mail_items') as any).update({ status: newStatus as any }).eq('id', id);
       if (error) throw error;
       toast.success('Statut mis à jour');
       fetchMailItems();
     } catch (error: any) {
-      toast.error(error.message || 'Erreur lors de la mise à jour');
+      toast.error('Erreur lors de la mise à jour');
     }
-  };
-
-  const handleAssignClick = (id: string) => {
-    setMailToAssign(id);
-    assignmentModal.open();
   };
 
   const assignToUser = async (userId: string | null) => {
     if (!mailToAssign) return;
-
     try {
-      const mailItem = mailItems.find((item) => item.id === mailToAssign);
-      if (!mailItem) {
-        toast.error('Courrier introuvable');
-        return;
-      }
-
+      const mailItem = mailItems.find(m => m.id === mailToAssign);
       const updateData: any = { assigned_to: userId };
-      // Si un utilisateur est assigné et le statut actuel est "registered", passer à "assigned"
-      if (userId && mailItem.status === 'registered') {
-        updateData.status = 'assigned';
-      }
-      
-      const { error } = await (supabase.from('mail_items') as any)
-        .update(updateData)
-        .eq('id', mailToAssign);
+      if (userId && mailItem?.status === 'registered') updateData.status = 'assigned';
 
+      const { error } = await (supabase.from('mail_items') as any).update(updateData).eq('id', mailToAssign);
       if (error) throw error;
       toast.success(userId ? 'Utilisateur assigné' : 'Assignation supprimée');
       fetchMailItems();
       assignmentModal.close();
       setMailToAssign(null);
-    } catch (error: any) {
+    } catch (error) {
       toast.error('Erreur lors de l\'assignation');
     }
   };
 
   const handleDelete = async () => {
     if (!mailToDelete) return;
-
     try {
-      const { error } = await (supabase.from('mail_items') as any)
-        .delete()
-        .eq('id', mailToDelete);
-
+      const { error } = await supabase.from('mail_items').delete().eq('id', mailToDelete);
       if (error) throw error;
       toast.success('Courrier supprimé');
       fetchMailItems();
       deleteModal.close();
       setMailToDelete(null);
-    } catch (error: any) {
+    } catch (error) {
       toast.error('Erreur lors de la suppression');
     }
   };
 
-  const filteredMailItems = useMemo(
-    () =>
-      mailItems.filter(
-    (item) =>
-      item.mail_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.subject.toLowerCase().includes(searchTerm.toLowerCase())
-      ),
-    [mailItems, searchTerm]
-  );
+  const filteredMailItems = useMemo(() => {
+    return mailItems.filter(item => {
+      const matchesSearch = item.mail_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.subject.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesType = typeFilter === 'all' || item.mail_type === typeFilter;
+      const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+      return matchesSearch && matchesType && matchesStatus;
+    });
+  }, [mailItems, searchTerm, typeFilter, statusFilter]);
 
-  // Pagination
+  const stats = useMemo(() => {
+    const total = mailItems.length;
+    const incoming = mailItems.filter(m => m.mail_type === 'incoming').length;
+    const outgoing = mailItems.filter(m => m.mail_type === 'outgoing').length;
+    const pending = mailItems.filter(m => m.status !== 'archived' && m.status !== 'validated').length;
+    return { total, incoming, outgoing, pending };
+  }, [mailItems]);
+
   const totalPages = Math.ceil(filteredMailItems.length / itemsPerPage);
-  const paginatedMailItems = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return filteredMailItems.slice(startIndex, endIndex);
-  }, [filteredMailItems, currentPage, itemsPerPage]);
-
-  // Réinitialiser la page si elle est hors limites
-  useEffect(() => {
-    if (currentPage > totalPages && totalPages > 0) {
-      setCurrentPage(1);
-    }
-  }, [currentPage, totalPages]);
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'incoming':
-        return <Inbox className="w-5 h-5 text-blue-600" />;
-      case 'outgoing':
-        return <Send className="w-5 h-5 text-green-600" />;
-      default:
-        return <Mail className="w-5 h-5 text-gray-600" />;
-    }
-  };
+  const paginatedMailItems = filteredMailItems.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   if (loading) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-900"></div>
         </div>
       </AppLayout>
     );
@@ -450,185 +208,217 @@ function CourriersPageContent() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
-        {/* Bouton retour */}
-        <BackButton href="/dashboard" />
+      <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+        {/* Header Block - Repertoire Style */}
+        <div className="bg-white border-2 border-emerald-100 p-6 sm:p-8 rounded-xl relative overflow-hidden group shadow-sm transition-all hover:border-emerald-200">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-50 rounded-full -mr-24 -mt-24 transition-transform duration-500 group-hover:scale-110 opacity-50" />
 
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-text">Services Courriers</h1>
-            <p className="text-text-light mt-1 text-sm sm:text-base">Gestion des courriers entrants, sortants et internes</p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
-            <Link href="/courriers/new?type=incoming" className="w-full sm:w-auto">
-              <Button 
-                icon={<Inbox className="w-5 h-5" />}
-                variant="primary"
-                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
-              >
-                ENTRANT
-              </Button>
-            </Link>
-            <Link href="/courriers/new?type=outgoing" className="w-full sm:w-auto">
-              <Button 
-                icon={<Send className="w-5 h-5" />}
-                variant="primary"
-                className="w-full sm:w-auto bg-green-600 hover:bg-green-700"
-              >
-                SORTANT
-              </Button>
-            </Link>
+          <div className="flex flex-col md:flex-row justify-between items-center sm:items-end gap-8 relative z-10">
+            <div className="space-y-4 text-center md:text-left">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100 mb-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Services Courriers</span>
+              </div>
+
+              <div className="relative">
+                <h1 className="text-3xl sm:text-4xl font-black tracking-tighter text-emerald-950 uppercase leading-none">
+                  Gestion <span className="text-emerald-500">Courriers</span>
+                </h1>
+              </div>
+
+              <div className="flex items-center gap-2 justify-center md:justify-start">
+                <span className="w-8 h-1 bg-yellow-500 rounded-full shrink-0" />
+                <p className="text-emerald-700/70 font-bold uppercase tracking-[0.2em] text-[10px]">
+                  Flux documentaire et gestion administrative centralisée
+                </p>
+              </div>
+            </div>
+
+            <Button
+              onClick={() => sheet.open()}
+              className="h-14 px-8 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border-b-4 border-emerald-700 shadow-xl shadow-success/20 w-full md:w-auto"
+              icon={<Plus className="w-5 h-5 stroke-[4]" />}
+            >
+              Nouveau Courrier
+            </Button>
           </div>
         </div>
 
-        {/* Search */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="relative">
-            <label htmlFor="mail-search" className="sr-only">
-              Rechercher un courrier
-            </label>
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+        {/* Stats Section - Repertoire Style */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[
+            { label: 'Total documents', value: stats.total, icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'Courriers entrants', value: stats.incoming, icon: Inbox, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { label: 'Courriers sortants', value: stats.outgoing, icon: Send, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { label: 'En attente', value: stats.pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', isWarning: true },
+          ].map((stat, i) => (
+            <div key={i} className="p-6 border-2 border-emerald-100 bg-white transition-all text-left group relative overflow-hidden rounded-xl hover:border-emerald-200 hover:scale-[1.02] shadow-sm">
+              <div className={cn("absolute top-0 right-0 w-24 h-24 rounded-full -mr-8 -mt-8 transition-transform duration-500 group-hover:scale-110 opacity-10", stat.bg)} />
+
+              <div className="flex items-center justify-between mb-4 relative z-10">
+                <div className={cn("p-4 rounded-xl shadow-none transition-all duration-300 group-hover:rotate-12", stat.bg, stat.color)}>
+                  <stat.icon className="w-6 h-6" />
+                </div>
+                {stat.isWarning && stat.value > 0 && (
+                  <div className="flex flex-col items-end">
+                    <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                    <span className="text-[9px] font-black uppercase tracking-tighter mt-1 text-emerald-800/40">Action Requise</span>
+                  </div>
+                )}
+              </div>
+              <div className="relative z-10">
+                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-800/40 mb-1">{stat.label}</p>
+                <p className="text-3xl font-black text-emerald-950 tracking-tight leading-none">{stat.value.toString().padStart(2, '0')}</p>
+              </div>
+
+              {stat.isWarning && stat.value > 0 && (
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-12 bg-yellow-400 rounded-r-full shadow-[0_0_15px_rgba(250,204,21,0.5)]" />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Filters Section - Repertoire Style */}
+        <div className="bg-white border-2 border-emerald-100 p-2 rounded-xl flex flex-col lg:flex-row gap-2 transition-all hover:border-emerald-200 shadow-sm">
+          <div className="flex-1 relative">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
             <input
-              id="mail-search"
-              name="mail-search"
               type="text"
-              placeholder="Rechercher un courrier..."
+              placeholder="Rechercher par n° ou objet..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full h-12 pl-14 pr-6 bg-transparent text-sm font-bold text-emerald-950 outline-none placeholder:text-emerald-200"
             />
+          </div>
+          <div className="h-px lg:h-8 lg:w-px bg-emerald-100 self-center" />
+          <div className="flex items-center gap-2 p-1">
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="h-10 px-4 bg-emerald-50 rounded-lg text-[9px] font-black uppercase tracking-widest text-emerald-800 outline-none border-none cursor-pointer hover:bg-emerald-100 transition-colors"
+            >
+              <option value="all">Tous les types</option>
+              {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-10 px-4 bg-emerald-50 rounded-lg text-[9px] font-black uppercase tracking-widest text-emerald-800 outline-none border-none cursor-pointer hover:bg-emerald-100 transition-colors"
+            >
+              <option value="all">Tous les statuts</option>
+              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+            <Button variant="secondary" className="h-10 px-4 rounded-lg bg-emerald-100/50 text-emerald-600 hover:text-emerald-950 border-none transition-colors">
+              <Filter className="w-4 h-4" />
+            </Button>
           </div>
         </div>
 
-        {/* Mail Items Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto -mx-4 sm:mx-0">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Numéro
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
-                    Type
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Objet
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
-                    Expéditeur/Destinataire
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
-                    Date
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Statut
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
-                    Assigné à
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
+        {/* Table/List Section - Repertoire Style */}
+        <div className="bg-white border-2 border-emerald-100 overflow-hidden rounded-xl shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full border-separate border-spacing-0">
+              <thead>
+                <tr className="bg-emerald-50/50">
+                  <th className="px-8 py-5 text-left text-[10px] font-black uppercase tracking-widest text-emerald-800/40 border-b border-emerald-100">Numéro & Type</th>
+                  <th className="px-8 py-5 text-left text-[10px] font-black uppercase tracking-widest text-emerald-800/40 border-b border-emerald-100">Objet & Date</th>
+                  <th className="px-8 py-5 text-left text-[10px] font-black uppercase tracking-widest text-emerald-800/40 border-b border-emerald-100">Statut</th>
+                  <th className="px-8 py-5 text-left text-[10px] font-black uppercase tracking-widest text-emerald-800/40 border-b border-emerald-100">Responsable</th>
+                  <th className="px-8 py-5 text-right text-[10px] font-black uppercase tracking-widest text-emerald-800/40 border-b border-emerald-100">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-emerald-100">
                 {paginatedMailItems.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 sm:px-6 py-8 text-center text-gray-500 text-xs sm:text-sm">
-                      {filteredMailItems.length === 0 ? 'Aucun courrier trouvé' : 'Aucun courrier sur cette page'}
+                    <td colSpan={5} className="px-8 py-32 text-center">
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="p-6 bg-slate-50 rounded-full">
+                          <Inbox className="w-12 h-12 text-slate-200" />
+                        </div>
+                        <p className="text-slate-400 font-bold uppercase text-xs tracking-widest">Aucun courrier trouvé</p>
+                        <Button variant="secondary" onClick={() => { setSearchTerm(''); setTypeFilter('all'); setStatusFilter('all'); }} className="h-10 px-6 rounded-xl">Réinitialiser les filtres</Button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   paginatedMailItems.map((item) => {
+                    const typeCfg = TYPE_CONFIG[item.mail_type] || TYPE_CONFIG.internal;
+                    const statusCfg = STATUS_CONFIG[item.status] || STATUS_CONFIG.registered;
                     const assignedUser = users.find(u => u.id === item.assigned_to);
+
                     return (
-                      <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium text-gray-900">
-                          {item.mail_number}
+                      <tr key={item.id} className="group hover:bg-emerald-50/50 transition-all">
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-4">
+                            <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center border-2 border-emerald-100 bg-emerald-50 transition-all group-hover:bg-white group-hover:border-emerald-300 shadow-sm")}>
+                              <typeCfg.icon className={cn("w-5 h-5", typeCfg.color)} />
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-sm font-black text-emerald-950 leading-tight uppercase tracking-tight">{item.mail_number}</span>
+                              <span className={cn("text-[9px] font-black uppercase tracking-widest mt-0.5", typeCfg.color)}>{typeCfg.label}</span>
+                            </div>
+                          </div>
                         </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap hidden sm:table-cell">
-                          <div className="flex items-center gap-2">
-                            {getTypeIcon(item.mail_type)}
-                            <span className="text-xs sm:text-sm text-gray-500">
-                              {TYPE_LABELS[item.mail_type] || item.mail_type}
+                        <td className="px-8 py-5">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-emerald-900 leading-tight mb-1 truncate max-w-[250px] uppercase tracking-tighter">{item.subject}</span>
+                            <span className="flex items-center gap-1.5 text-[9px] font-black text-emerald-800/40 uppercase tracking-widest">
+                              <Clock className="w-3 h-3 text-emerald-400" />
+                              {item.received_date || item.sent_date ? new Date(item.received_date || item.sent_date || '').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'}
                             </span>
                           </div>
                         </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-500">
-                          <div className="truncate max-w-[200px] sm:max-w-none">{item.subject}</div>
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-500 hidden md:table-cell">
-                          <div className="truncate max-w-[150px] lg:max-w-none">
-                          {item.mail_type === 'incoming'
-                            ? item.sender
-                            : item.mail_type === 'outgoing'
-                            ? item.recipient
-                            : '-'}
+                        <td className="px-8 py-5">
+                          <div className="relative inline-block">
+                            <select
+                              value={item.status}
+                              onChange={(e) => updateStatus(item.id, e.target.value)}
+                              className={cn(
+                                "h-9 px-4 pr-8 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 appearance-none cursor-pointer outline-none transition-all shadow-sm",
+                                statusCfg.bg, statusCfg.color, "border-white group-hover:border-emerald-100"
+                              )}
+                            >
+                              <option value={item.status}>{statusCfg.label}</option>
+                              {(STATUS_WORKFLOW[item.status] || []).map((s) => (
+                                <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+                              ))}
+                            </select>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                              <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", statusCfg.color.replace('text-', 'bg-'))} />
+                            </div>
                           </div>
                         </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500 hidden lg:table-cell">
-                          {item.received_date || item.sent_date
-                            ? new Date(
-                                item.received_date || item.sent_date || ''
-                              ).toLocaleDateString('fr-FR')
-                            : '-'}
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
-                          <label htmlFor={`status-select-${item.id}`} className="sr-only">
-                            Statut
-                          </label>
-                          <select
-                            id={`status-select-${item.id}`}
-                            name={`status-select-${item.id}`}
-                            value={item.status}
-                            onChange={(e) => updateStatus(item.id, e.target.value)}
-                            className="text-xs px-2 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
-                            title={`Statut actuel: ${STATUS_LABELS[item.status]}. Transitions autorisées: ${(STATUS_WORKFLOW[item.status] || []).map((s) => STATUS_LABELS[s]).join(', ') || 'Aucune'}`}
+                        <td className="px-8 py-5">
+                          <button
+                            onClick={() => { setMailToAssign(item.id); assignmentModal.open(); }}
+                            className="flex items-center gap-3 bg-emerald-50/50 hover:bg-emerald-100/50 px-3 py-2 rounded-xl border border-dashed border-emerald-200 transition-colors"
                           >
-                            <option value={item.status}>{STATUS_LABELS[item.status]}</option>
-                            {(STATUS_WORKFLOW[item.status] || []).map((status) => (
-                              <option key={status} value={status}>
-                                {STATUS_LABELS[status]}
-                              </option>
-                            ))}
-                          </select>
+                            <div className="w-8 h-8 rounded-lg bg-white border border-emerald-100 flex items-center justify-center shadow-sm">
+                              <User className="w-4 h-4 text-emerald-400" />
+                            </div>
+                            <span className="text-[9px] font-black uppercase tracking-widest text-emerald-800/60">
+                              {assignedUser ? (assignedUser.full_name || assignedUser.email) : 'Assigner...'}
+                            </span>
+                          </button>
                         </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap hidden md:table-cell">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => handleAssignClick(item.id)}
-                            className="text-xs w-full max-w-xs"
-                            title={assignedUser ? `Assigné à: ${assignedUser.full_name || assignedUser.email}` : 'Non assigné'}
-                          >
-                            {assignedUser ? (assignedUser.full_name || assignedUser.email) : 'Non assigné'}
-                          </Button>
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium">
-                          <div className="flex items-center justify-end gap-1 sm:gap-2">
-                            <Link href={`/courriers/${item.id}`} prefetch={false}>
-                              <Button variant="secondary" size="sm" icon={<Eye className="w-3 h-3 sm:w-4 sm:h-4" />} className="text-xs">
-                                <span className="hidden sm:inline">Voir</span>
-                              </Button>
+                        <td className="px-8 py-5 text-right">
+                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
+                            <Link href={`/courriers/${item.id}`} className="w-10 h-10 flex items-center justify-center bg-white border-2 border-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-all shadow-sm">
+                              <Eye className="w-4 h-4" />
                             </Link>
-                            <Link href={`/courriers/${item.id}/edit`} prefetch={false} className="hidden sm:block">
-                              <Button variant="secondary" size="sm" icon={<Edit className="w-4 h-4" />} className="text-xs">
-                                Modifier
-                              </Button>
+                            <Link href={`/courriers/${item.id}/edit`} className="w-10 h-10 flex items-center justify-center bg-white border-2 border-emerald-100 text-blue-400 rounded-xl hover:bg-blue-500 hover:text-white hover:border-blue-500 transition-all shadow-sm">
+                              <Edit className="w-4 h-4" />
                             </Link>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              icon={<Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />}
-                              onClick={() => {
-                                setMailToDelete(item.id);
-                                deleteModal.open();
-                              }}
-                              className="text-xs"
+                            <button
+                              onClick={() => { setMailToDelete(item.id); deleteModal.open(); }}
+                              className="w-10 h-10 flex items-center justify-center bg-white border-2 border-emerald-100 text-red-400 rounded-xl hover:bg-red-500 hover:text-white hover:border-red-500 transition-all shadow-sm"
                             >
-                              <span className="hidden sm:inline">Supprimer</span>
-                            </Button>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -640,9 +430,9 @@ function CourriersPageContent() {
           </div>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination Section */}
         {totalPages > 1 && (
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex justify-center pt-4">
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
@@ -653,23 +443,32 @@ function CourriersPageContent() {
           </div>
         )}
 
+        {/* Modals & Sheet */}
+        <Sheet
+          isOpen={sheet.isOpen}
+          onClose={sheet.close}
+          title="Enregistrer un courrier"
+          description="Remplissez les informations pour documenter un nouveau courrier entrant ou sortant."
+          size="lg"
+        >
+          <MailForm onSuccess={() => { sheet.close(); fetchMailItems(); }} onCancel={sheet.close} />
+        </Sheet>
+
         <ConfirmModal
           isOpen={deleteModal.isOpen}
           onClose={deleteModal.close}
           onConfirm={handleDelete}
-          title="Supprimer le courrier"
-          message="Êtes-vous sûr de vouloir supprimer ce courrier ? Cette action est irréversible."
+          title="Supprimer définitivement ?"
+          message="Cette action est irréversible. Les pièces jointes associées resteront accessibles via l'archive."
+          variant="danger"
         />
 
         {mailToAssign && (
           <UserAssignmentModal
             isOpen={assignmentModal.isOpen}
-            onClose={() => {
-              assignmentModal.close();
-              setMailToAssign(null);
-            }}
+            onClose={() => { assignmentModal.close(); setMailToAssign(null); }}
             onSelect={assignToUser}
-            currentUserId={mailItems.find((item) => item.id === mailToAssign)?.assigned_to || null}
+            currentUserId={mailItems.find(m => m.id === mailToAssign)?.assigned_to || null}
             profile={profile}
           />
         )}
@@ -682,8 +481,8 @@ export default function CourriersPage() {
   return (
     <Suspense fallback={
       <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="w-10 h-10 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
         </div>
       </AppLayout>
     }>
@@ -691,4 +490,3 @@ export default function CourriersPage() {
     </Suspense>
   );
 }
-

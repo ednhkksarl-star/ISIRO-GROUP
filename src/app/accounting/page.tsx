@@ -1,22 +1,38 @@
 'use client';
 
-import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useEffect, useState, useMemo, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { Plus, Search, Download, Filter, X, ChevronDown, Trash2, Eye, Pencil, FileDown } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  Download,
+  Filter,
+  X,
+  ChevronDown,
+  Trash2,
+  Eye,
+  Pencil,
+  FileDown,
+  ChevronLeft,
+  ChevronRight,
+  AlertCircle
+} from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
-import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
-import BackButton from '@/components/ui/BackButton';
+import { useToast } from '@/components/ui/Toast';
+import Modal from '@/components/ui/Modal';
 import Pagination from '@/components/ui/Pagination';
+import AccountingEntryForm from '@/components/accounting/AccountingEntryForm';
 import { useEntity } from '@/hooks/useEntity';
+import { useEntityContext } from '@/hooks/useEntityContext';
+import { useModal } from '@/hooks/useModal';
 import EntitySelector from '@/components/entity/EntitySelector';
 import { normalizeEntityIds, getEntityUUID } from '@/utils/entityHelpers';
 import { generateAccountingPDF } from '@/utils/generateAccountingPDF';
 import { formatNumber } from '@/utils/formatNumber';
+import { cn } from '@/utils/cn';
 import type { Database } from '@/types/database.types';
 
 type AccountingEntry = Database['public']['Tables']['accounting_entries']['Row'];
@@ -32,11 +48,14 @@ interface AdvancedFilters {
 
 function AccountingPageContent() {
   const { profile } = useAuth();
+  const toast = useToast();
   const { selectedEntityId: globalSelectedEntityId, isGroupView, setSelectedEntityId } = useEntity();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [entries, setEntries] = useState<AccountingEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const entryModal = useModal();
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [balance, setBalance] = useState(0);
   const [localSelectedEntityId, setLocalSelectedEntityId] = useState<string | null>(null);
@@ -57,302 +76,161 @@ function AccountingPageContent() {
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const supabase = createSupabaseClient();
 
-  // Utiliser l'entité depuis les paramètres de requête, la sélection locale, ou la sélection globale
-  // Pour Super Admin/Admin Entity, selectedEntityId peut être null (vue consolidée)
+  // Determine entity
   const entityId = searchParams?.get('entity') || localSelectedEntityId || (isGroupView ? null : globalSelectedEntityId);
 
-  // Vérifier si l'utilisateur peut sélectionner une entité
-  const canSelectEntity = profile?.role === 'SUPER_ADMIN_GROUP' || 
-                          profile?.role === 'ADMIN_ENTITY' ||
-                          (profile?.entity_ids && profile.entity_ids.length > 1);
+  // Check role permissions
+  const canSelectEntity = profile?.role === 'SUPER_ADMIN_GROUP' ||
+    profile?.role === 'ADMIN_ENTITY' ||
+    (profile?.entity_ids && profile.entity_ids.length > 1);
 
-  // Initialiser localSelectedEntityId depuis les paramètres ou la sélection globale
+  // Sync entity from params
   useEffect(() => {
     const entityParam = searchParams?.get('entity');
     if (entityParam) {
-      // Convertir le paramètre (code ou UUID) en UUID avant de le stocker
       getEntityUUID(entityParam).then((uuid) => {
         if (uuid) {
           setLocalSelectedEntityId(uuid);
-          // Synchroniser aussi le contexte global pour Super Admin et Admin Entity
           if (profile?.role === 'SUPER_ADMIN_GROUP' || profile?.role === 'ADMIN_ENTITY') {
             setSelectedEntityId(uuid);
           }
         }
       });
     } else {
-      // Synchroniser avec la sélection globale
       setLocalSelectedEntityId(globalSelectedEntityId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, globalSelectedEntityId]);
+  }, [searchParams, globalSelectedEntityId, profile?.role, setSelectedEntityId]);
 
-  useEffect(() => {
-    fetchEntries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, entityId, advancedFilters]);
-
-  const handleEntityChange = (newEntityId: string | null) => {
-    // Mettre à jour la sélection globale ET locale
-    setSelectedEntityId(newEntityId);
-    setLocalSelectedEntityId(newEntityId);
-    // Mettre à jour l'URL avec le paramètre entity
-    const params = new URLSearchParams(searchParams?.toString());
-    if (newEntityId) {
-      params.set('entity', newEntityId);
-    } else {
-      params.delete('entity');
-    }
-    router.push(`/accounting?${params.toString()}`);
-  };
-
-  const fetchEntries = async () => {
+  const fetchEntries = useCallback(async () => {
     try {
       setLoading(true);
-      let query = supabase
-        .from('accounting_entries')
-        .select('*');
+      let query = supabase.from('accounting_entries').select('*');
 
-      // Système intelligent : appliquer automatiquement les filtres selon le rôle et l'entité
-      // Super Admin et Admin Entity en vue consolidée (entityId = null) : voir toutes les données
       if (profile && (profile.role === 'SUPER_ADMIN_GROUP' || profile.role === 'ADMIN_ENTITY')) {
-        // Si une entité spécifique est sélectionnée, filtrer par cette entité
         if (entityId) {
           const uuid = await getEntityUUID(entityId);
-          if (uuid) {
-            query = query.eq('entity_id', uuid);
-          } else {
-            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-          }
+          if (uuid) query = query.eq('entity_id', uuid);
         }
-        // Sinon (vue consolidée, entityId = null), pas de filtre = voir toutes les données
       } else if (profile) {
-        // Pour tous les autres utilisateurs (y compris AGENT_ACCUEIL, MANAGER_ENTITY, etc.),
-        // filtrer automatiquement par leur(s) entité(s)
         if (profile.entity_ids && profile.entity_ids.length > 0) {
           const uuids = await normalizeEntityIds(profile.entity_ids);
-          if (uuids.length > 0) {
-            query = query.in('entity_id', uuids);
-          } else {
-            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-          }
+          if (uuids.length > 0) query = query.in('entity_id', uuids);
         } else if (profile.entity_id) {
           const uuid = await getEntityUUID(profile.entity_id);
-          if (uuid) {
-            query = query.eq('entity_id', uuid);
-          } else {
-            query = query.eq('id', '00000000-0000-0000-0000-000000000000');
-          }
-        } else {
-          // Si aucune entité n'est définie, retourner une requête vide
-          query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+          if (uuid) query = query.eq('entity_id', uuid);
         }
       }
 
-      // Filtres avancés
-      if (advancedFilters.dateFrom) {
-        query = query.gte('entry_date', advancedFilters.dateFrom);
-      }
-      if (advancedFilters.dateTo) {
-        query = query.lte('entry_date', advancedFilters.dateTo);
-      }
-      if (advancedFilters.code) {
-        query = query.ilike('code', `%${advancedFilters.code}%`);
-      }
-      if (advancedFilters.type === 'entrees') {
-        query = query.gt('entrees', 0);
-      } else if (advancedFilters.type === 'sorties') {
-        query = query.gt('sorties', 0);
-      }
+      if (advancedFilters.dateFrom) query = query.gte('entry_date', advancedFilters.dateFrom);
+      if (advancedFilters.dateTo) query = query.lte('entry_date', advancedFilters.dateTo);
+      if (advancedFilters.code) query = query.ilike('code', `%${advancedFilters.code}%`);
 
-      // Trier
+      if (advancedFilters.type === 'entrees') query = query.gt('entrees', 0);
+      else if (advancedFilters.type === 'sorties') query = query.gt('sorties', 0);
+
       query = query.order('entry_date', { ascending: false }).order('entry_number', { ascending: false });
 
       const { data, error } = await query;
-
       if (error) throw error;
-      let filteredData: AccountingEntry[] = (data || []) as AccountingEntry[];
 
-      // Filtres côté client (montants, car ils nécessitent des calculs)
-      if (advancedFilters.minAmount) {
-        const minAmount = parseFloat(advancedFilters.minAmount);
-        if (!isNaN(minAmount)) {
-          filteredData = filteredData.filter((entry) => {
-            const total = (entry.entrees || 0) + (entry.sorties || 0);
-            return total >= minAmount;
-          });
-        }
-      }
-      if (advancedFilters.maxAmount) {
-        const maxAmount = parseFloat(advancedFilters.maxAmount);
-        if (!isNaN(maxAmount)) {
-          filteredData = filteredData.filter((entry) => {
-            const total = (entry.entrees || 0) + (entry.sorties || 0);
-            return total <= maxAmount;
-          });
-        }
-      }
-
+      let filteredData = (data || []) as AccountingEntry[];
       setEntries(filteredData);
 
-      // Calculer le solde (entrees - sorties) avec les données filtrées
-      const totalBalance =
-        filteredData.reduce((sum, entry) => sum + ((entry.entrees || 0) - (entry.sorties || 0)), 0) || 0;
+      const totalBalance = filteredData.reduce((sum, entry) => sum + ((entry.entrees || 0) - (entry.sorties || 0)), 0);
       setBalance(totalBalance);
-    } catch (error: any) {
+    } catch (error) {
       toast.error('Erreur lors du chargement des écritures');
-      console.error(error);
     } finally {
       setLoading(false);
     }
+  }, [supabase, profile, entityId, advancedFilters]);
+
+  useEffect(() => {
+    fetchEntries();
+  }, [fetchEntries]);
+
+  const handleEntityChange = (newEntityId: string | null) => {
+    setSelectedEntityId(newEntityId);
+    setLocalSelectedEntityId(newEntityId);
+    const params = new URLSearchParams(searchParams?.toString());
+    if (newEntityId) params.set('entity', newEntityId);
+    else params.delete('entity');
+    router.push(`/accounting?${params.toString()}`);
   };
 
   const clearAdvancedFilters = () => {
     setAdvancedFilters({
-      dateFrom: '',
-      dateTo: '',
-      code: '',
-      minAmount: '',
-      maxAmount: '',
-      type: 'all',
+      dateFrom: '', dateTo: '', code: '', minAmount: '', maxAmount: '', type: 'all'
     });
   };
 
   const hasActiveFilters = () => {
-    return !!(
-      advancedFilters.dateFrom ||
-      advancedFilters.dateTo ||
-      advancedFilters.code ||
-      advancedFilters.minAmount ||
-      advancedFilters.maxAmount ||
-      advancedFilters.type !== 'all'
-    );
+    return !!(advancedFilters.dateFrom || advancedFilters.dateTo || advancedFilters.code || advancedFilters.type !== 'all');
   };
 
-  // Filtrer par terme de recherche (recherche texte uniquement)
-  const filteredEntries = useMemo(
-    () =>
-      entries.filter(
-    (entry) =>
+  const filteredEntries = useMemo(() =>
+    entries.filter(entry =>
       entry.entry_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          entry.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (entry.code && entry.code.toLowerCase().includes(searchTerm.toLowerCase())) ||
-          (entry.numero_piece && entry.numero_piece.toLowerCase().includes(searchTerm.toLowerCase()))
-      ),
-    [entries, searchTerm]
+      entry.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (entry.code && entry.code.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (entry.numero_piece && entry.numero_piece.toLowerCase().includes(searchTerm.toLowerCase()))
+    ), [entries, searchTerm]
   );
 
   // Pagination
   const totalPages = Math.ceil(filteredEntries.length / itemsPerPage);
   const paginatedEntries = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return filteredEntries.slice(startIndex, endIndex);
+    return filteredEntries.slice(startIndex, startIndex + itemsPerPage);
   }, [filteredEntries, currentPage, itemsPerPage]);
-
-  // Réinitialiser la page si elle est hors limites
-  useEffect(() => {
-    if (currentPage > totalPages && totalPages > 0) {
-      setCurrentPage(1);
-    }
-  }, [currentPage, totalPages]);
-
-  const handleDeleteClick = (entry: AccountingEntry) => {
-    setEntryToDelete(entry);
-    setDeleteModalOpen(true);
-  };
 
   const handleDeleteConfirm = async () => {
     if (!entryToDelete) return;
-
     try {
       setDeleting(true);
-      const { error } = await supabase
-        .from('accounting_entries')
-        .delete()
-        .eq('id', entryToDelete.id);
-
+      const { error } = await supabase.from('accounting_entries').delete().eq('id', entryToDelete.id);
       if (error) throw error;
-
-      toast.success('Écriture supprimée avec succès');
+      toast.success('Écriture supprimée');
       setDeleteModalOpen(false);
       setEntryToDelete(null);
-      fetchEntries(); // Rafraîchir la liste
-    } catch (error: any) {
-      toast.error('Erreur lors de la suppression: ' + (error.message || 'Une erreur est survenue'));
-      console.error(error);
+      fetchEntries();
+    } catch (error) {
+      toast.error('Erreur lors de la suppression');
     } finally {
       setDeleting(false);
     }
   };
 
-  const handleDeleteCancel = () => {
-    setDeleteModalOpen(false);
-    setEntryToDelete(null);
-  };
-
-  const exportToCSV = () => {
-    const headers = ['N°', 'DATE', 'CODE', 'LIBELLE', 'N° PIECE', 'ENTREES', 'SORTIES', 'SOLDE'];
-    const rows = filteredEntries.map((entry) => [
-      entry.entry_number,
-      new Date(entry.entry_date).toLocaleDateString('fr-FR'),
-      entry.code || '',
-      entry.description,
-      entry.numero_piece || '',
-      formatNumber(entry.entrees ?? 0),
-      formatNumber(entry.sorties ?? 0),
-      formatNumber(entry.balance),
-    ]);
-
-    const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell)}"`).join(','))
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `comptabilite-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-  };
-
   const handleExportPDF = async () => {
     setGeneratingPDF(true);
     try {
-      let entityInfo: { name: string; code: string } | null = null;
+      let entityInfo = null;
       if (entityId) {
         const uuid = await getEntityUUID(entityId);
         if (uuid) {
-          const { data } = await supabase
-            .from('entities')
-            .select('name, code')
-            .eq('id', uuid)
-            .maybeSingle();
-          const entityData = data as { name: string; code: string } | null;
-          if (entityData) {
-            entityInfo = { name: entityData.name, code: entityData.code };
-          }
+          const { data } = await supabase.from('entities').select('name, code').eq('id', uuid).maybeSingle();
+          if (data) entityInfo = data as { name: string; code: string };
         }
       }
       await generateAccountingPDF({
-        entries: filteredEntries.map((e) => ({
+        entries: filteredEntries.map(e => ({
           entry_number: e.entry_number,
           entry_date: e.entry_date,
           code: e.code,
           description: e.description,
           numero_piece: e.numero_piece,
-          entrees: e.entrees ?? 0,
-          sorties: e.sorties ?? 0,
-          balance: e.balance ?? 0,
+          entrees: e.entrees || 0,
+          sorties: e.sorties || 0,
+          balance: e.balance || 0,
         })),
         balance,
         entity: entityInfo,
         dateFrom: advancedFilters.dateFrom || undefined,
         dateTo: advancedFilters.dateTo || undefined,
       });
-      toast.success('PDF généré avec succès');
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.message || 'Erreur lors de la génération du PDF');
+      toast.success('PDF généré');
+    } catch (err) {
+      toast.error('Erreur PDF');
     } finally {
       setGeneratingPDF(false);
     }
@@ -362,7 +240,7 @@ function AccountingPageContent() {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
       </AppLayout>
     );
@@ -370,319 +248,300 @@ function AccountingPageContent() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
-        {/* Bouton retour */}
-        <BackButton href="/dashboard" />
+      <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-700">
+        {/* Header Block - Repertoire Style */}
+        <div className="bg-white border-2 border-emerald-100 p-6 sm:p-8 rounded-xl relative overflow-hidden group shadow-sm transition-all hover:border-emerald-200">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-50 rounded-full -mr-24 -mt-24 transition-transform duration-500 group-hover:scale-110 opacity-50" />
 
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-text">Livre de Caisse</h1>
-            <p className="text-text-light mt-1 text-sm sm:text-base">Journal des entrées et sorties de caisse</p>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="secondary"
-              onClick={exportToCSV}
-              icon={<Download className="w-5 h-5" />}
-            >
-              Exporter CSV
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleExportPDF}
-              loading={generatingPDF}
-              disabled={generatingPDF || filteredEntries.length === 0}
-              icon={<FileDown className="w-5 h-5" />}
-            >
-              {generatingPDF ? 'Génération...' : 'Exporter PDF'}
-            </Button>
-            <Link href={entityId ? `/accounting/new?entity=${entityId}` : '/accounting/new'}>
-              <Button icon={<Plus className="w-5 h-5" />}>
+          <div className="flex flex-col md:flex-row justify-between items-center sm:items-end gap-8 relative z-10">
+            <div className="space-y-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100 mb-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Finance & Trésorerie</span>
+              </div>
+
+              <div className="relative">
+                <h1 className="text-3xl sm:text-4xl font-black tracking-tighter text-emerald-950 uppercase leading-none">
+                  Livre de <span className="text-emerald-500">Caisse</span>
+                </h1>
+              </div>
+
+              <div className="flex items-center gap-2 justify-center md:justify-start">
+                <span className="w-8 h-1 bg-yellow-500 rounded-full shrink-0" />
+                <p className="text-emerald-700/70 font-bold uppercase tracking-[0.2em] text-[10px]">
+                  Journal des flux financiers et écritures comptables certifiées
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+              <button
+                onClick={handleExportPDF}
+                disabled={generatingPDF || filteredEntries.length === 0}
+                className="h-14 px-6 bg-white border-2 border-emerald-100 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:bg-emerald-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 shadow-sm min-w-[160px]"
+              >
+                {generatingPDF ? <div className="w-5 h-5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" /> : <FileDown className="w-5 h-5" />}
+                Exporter PDF
+              </button>
+              <button
+                onClick={() => { setEditingEntryId(null); entryModal.open(); }}
+                className="h-14 px-8 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-success/20 flex items-center justify-center gap-3 border-b-4 border-emerald-700 min-w-[200px]"
+              >
+                <Plus className="w-5 h-5 stroke-[4]" />
                 Nouvelle écriture
-              </Button>
-            </Link>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Balance Summary */}
-        <Card>
-          <div className="flex justify-between items-center">
-            <span className="text-lg font-medium text-text">Solde total:</span>
-            <span
-              className={`text-2xl font-bold ${
-                balance >= 0 ? 'text-green-600' : 'text-red-600'
-              }`}
-            >
-              {formatNumber(balance)} $US
-            </span>
-          </div>
-        </Card>
-
-        {/* Entity Selector and Filters */}
-        <div className="bg-white rounded-lg shadow p-4 space-y-4">
-          {/* Entity Selector */}
-          {canSelectEntity && (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                Filtrer par entité:
-              </label>
-              <EntitySelector
-                selectedEntityId={localSelectedEntityId || globalSelectedEntityId}
-                onSelectEntity={handleEntityChange}
-                userRole={profile?.role || ''}
-                userEntityIds={profile?.entity_ids || null}
-              />
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white border-2 border-emerald-100 rounded-xl p-6 relative overflow-hidden group shadow-sm transition-all hover:border-emerald-200">
+            <div className="absolute top-0 left-0 w-1 h-full bg-success" />
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black text-emerald-600/40 uppercase tracking-widest">Total Entrées</p>
+              <div className="w-8 h-8 bg-success/10 rounded-lg flex items-center justify-center">
+                <Plus className="w-4 h-4 text-success" />
+              </div>
             </div>
-          )}
-
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder="Rechercher une écriture..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-3xl font-black text-emerald-950 tracking-tighter tabular-nums">
+                {formatNumber(entries.reduce((sum, e) => sum + (e.entrees || 0), 0))}
+              </h3>
+              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">USD</span>
+            </div>
           </div>
 
-          {/* Advanced Filters Toggle */}
-          <div className="flex items-center justify-between pt-2 border-t">
-            <button
-              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-              className="flex items-center gap-2 text-sm font-medium text-primary hover:text-primary-dark transition-colors"
-            >
-              <Filter className="w-4 h-4" />
-              <span>Filtres avancés</span>
-              {hasActiveFilters() && (
-                <span className="bg-primary text-white text-xs px-2 py-0.5 rounded-full">
-                  Actifs
-                </span>
+          <div className="bg-white border-2 border-emerald-100 rounded-xl p-6 relative overflow-hidden group shadow-sm transition-all hover:border-emerald-200">
+            <div className="absolute top-0 left-0 w-1 h-full bg-error" />
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black text-emerald-600/40 uppercase tracking-widest">Total Sorties</p>
+              <div className="w-8 h-8 bg-error/10 rounded-lg flex items-center justify-center">
+                <Trash2 className="w-4 h-4 text-error" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-3xl font-black text-emerald-950 tracking-tighter tabular-nums">
+                {formatNumber(entries.reduce((sum, e) => sum + (e.sorties || 0), 0))}
+              </h3>
+              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">USD</span>
+            </div>
+          </div>
+
+          <div className="bg-emerald-950 rounded-xl p-6 relative overflow-hidden group shadow-xl shadow-emerald-950/20">
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-400" />
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-white/10 transition-all duration-700" />
+            <div className="flex items-center justify-between mb-4 relative z-10">
+              <p className="text-[10px] font-black text-emerald-400/60 uppercase tracking-widest">Solde Net Actuel</p>
+              <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
+                <Download className="w-4 h-4 text-white" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2 text-white relative z-10">
+              <h3 className="text-4xl font-black tracking-tighter tabular-nums text-success">
+                {formatNumber(balance)}
+              </h3>
+              <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">USD</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-emerald-50/30 border-2 border-emerald-100 rounded-xl p-8 shadow-sm">
+          <div className="space-y-8">
+            <div className="flex flex-col md:flex-row gap-8">
+              {canSelectEntity && (
+                <div className="md:w-1/3">
+                  <label className="block text-[10px] font-black text-emerald-800/40 uppercase tracking-widest mb-2.5 ml-1">Filtrer par Entité</label>
+                  <div className="p-1 bg-white border-2 border-emerald-100 rounded-xl shadow-sm">
+                    <EntitySelector
+                      selectedEntityId={localSelectedEntityId || globalSelectedEntityId}
+                      onSelectEntity={handleEntityChange}
+                      userRole={profile?.role || ''}
+                      userEntityIds={profile?.entity_ids || null}
+                      className="w-full border-none shadow-none"
+                    />
+                  </div>
+                </div>
               )}
-              <ChevronDown
-                className={`w-4 h-4 transition-transform ${showAdvancedFilters ? 'rotate-180' : ''}`}
-              />
-            </button>
-            {hasActiveFilters() && (
+              <div className="flex-1">
+                <label className="block text-[10px] font-black text-emerald-800/40 uppercase tracking-widest mb-2.5 ml-1">Recherche Rapide</label>
+                <div className="relative group">
+                  <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-emerald-400 w-5 h-5 transition-colors group-focus-within:text-emerald-500" />
+                  <input
+                    type="text"
+                    placeholder="Numéro, libellé, client ou pièce..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full h-14 bg-white border-2 border-emerald-100 rounded-xl pl-14 pr-6 text-sm font-black uppercase tracking-tighter text-emerald-950 outline-none focus:border-emerald-400 transition-all shadow-sm placeholder:text-emerald-100"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-6 border-t border-emerald-100">
               <button
-                onClick={clearAdvancedFilters}
-                className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1"
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                className="flex items-center gap-3 group transition-all"
               >
-                <X className="w-4 h-4" />
-                Réinitialiser
+                <div className={cn(
+                  "w-10 h-10 rounded-xl transition-all flex items-center justify-center border-2",
+                  showAdvancedFilters
+                    ? "bg-yellow-500 border-yellow-600 text-emerald-950 shadow-lg shadow-yellow-500/20"
+                    : "bg-white border-emerald-100 text-emerald-400 group-hover:border-emerald-200"
+                )}>
+                  <Filter className="w-5 h-5 stroke-[2.5]" />
+                </div>
+                <span className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-950">Filtres Avancés</span>
+                <ChevronDown className={cn("w-5 h-5 text-emerald-200 transition-transform duration-300", showAdvancedFilters ? "rotate-180" : "")} />
               </button>
+              {hasActiveFilters() && (
+                <button
+                  onClick={clearAdvancedFilters}
+                  className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-50 px-5 py-2.5 rounded-xl border-2 border-transparent hover:border-red-100 transition-all"
+                >
+                  Réinitialiser
+                </button>
+              )}
+            </div>
+
+            {showAdvancedFilters && (
+              <div className="pt-8 border-t border-emerald-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="space-y-2">
+                  <label className="block text-[9px] font-black text-emerald-800/40 uppercase tracking-widest ml-1">Période Début</label>
+                  <input
+                    type="date"
+                    value={advancedFilters.dateFrom}
+                    onChange={(e) => setAdvancedFilters({ ...advancedFilters, dateFrom: e.target.value })}
+                    className="w-full bg-white border-2 border-emerald-100 rounded-xl px-4 py-3.5 text-xs font-black uppercase tracking-tight text-emerald-950 focus:border-emerald-400 outline-none shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-[9px] font-black text-emerald-800/40 uppercase tracking-widest ml-1">Période Fin</label>
+                  <input
+                    type="date"
+                    value={advancedFilters.dateTo}
+                    onChange={(e) => setAdvancedFilters({ ...advancedFilters, dateTo: e.target.value })}
+                    className="w-full bg-white border-2 border-emerald-100 rounded-xl px-4 py-3.5 text-xs font-black uppercase tracking-tight text-emerald-950 focus:border-emerald-400 outline-none shadow-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-[9px] font-black text-emerald-800/40 uppercase tracking-widest ml-1">Code Comptable</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 701..."
+                    value={advancedFilters.code}
+                    onChange={(e) => setAdvancedFilters({ ...advancedFilters, code: e.target.value })}
+                    className="w-full bg-white border-2 border-emerald-100 rounded-xl px-4 py-3.5 text-xs font-black uppercase tracking-tight text-emerald-950 focus:border-emerald-400 outline-none shadow-sm placeholder:text-emerald-100"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-[9px] font-black text-emerald-800/40 uppercase tracking-widest ml-1">Nature du Flux</label>
+                  <div className="relative">
+                    <select
+                      value={advancedFilters.type}
+                      onChange={(e) => setAdvancedFilters({ ...advancedFilters, type: e.target.value as any })}
+                      className="w-full bg-white border-2 border-emerald-100 rounded-xl px-4 py-3.5 text-xs font-black uppercase tracking-tight text-emerald-950 focus:border-emerald-400 outline-none shadow-sm appearance-none"
+                    >
+                      <option value="all">Tous les Flux</option>
+                      <option value="entrees">Entrées (Recettes)</option>
+                      <option value="sorties">Sorties (Dépenses)</option>
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-200 w-4 h-4 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
             )}
           </div>
-
-          {/* Advanced Filters Panel */}
-          {showAdvancedFilters && (
-            <div className="pt-4 border-t space-y-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Date From */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date de début
-                </label>
-                <input
-                  type="date"
-                  value={advancedFilters.dateFrom}
-                  onChange={(e) =>
-                    setAdvancedFilters({ ...advancedFilters, dateFrom: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                />
-              </div>
-
-              {/* Date To */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date de fin
-                </label>
-                <input
-                  type="date"
-                  value={advancedFilters.dateTo}
-                  onChange={(e) =>
-                    setAdvancedFilters({ ...advancedFilters, dateTo: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                />
-              </div>
-
-              {/* Code */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Code
-                </label>
-                <input
-                  type="text"
-                  placeholder="Rechercher par code..."
-                  value={advancedFilters.code}
-                  onChange={(e) =>
-                    setAdvancedFilters({ ...advancedFilters, code: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                />
-              </div>
-
-              {/* Type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Type
-                </label>
-                <select
-                  value={advancedFilters.type}
-                  onChange={(e) =>
-                    setAdvancedFilters({
-                      ...advancedFilters,
-                      type: e.target.value as 'all' | 'entrees' | 'sorties',
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                >
-                  <option value="all">Tous</option>
-                  <option value="entrees">Entrées uniquement</option>
-                  <option value="sorties">Sorties uniquement</option>
-                </select>
-              </div>
-
-              {/* Min Amount */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Montant minimum (USD)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={advancedFilters.minAmount}
-                  onChange={(e) =>
-                    setAdvancedFilters({ ...advancedFilters, minAmount: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                />
-              </div>
-
-              {/* Max Amount */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Montant maximum (USD)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={advancedFilters.maxAmount}
-                  onChange={(e) =>
-                    setAdvancedFilters({ ...advancedFilters, maxAmount: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                />
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Entries Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        {/* Table */}
+        <div className="bg-white border-2 border-emerald-100 rounded-xl overflow-hidden shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-700">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gradient-to-r from-primary/10 to-primary/5">
-                <tr>
-                  <th className="px-3 sm:px-6 py-3 text-left text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    N°
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    DATE
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    CODE
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    LIBELLE
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-left text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    N° PIECE
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    ENTREES
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    SORTIES
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-right text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    SOLDE
-                  </th>
-                  <th className="px-3 sm:px-6 py-3 text-center text-[10px] sm:text-xs font-bold text-primary uppercase tracking-wider">
-                    ACTIONS
-                  </th>
+            <table className="w-full">
+              <thead>
+                <tr className="bg-emerald-50/50 border-b-2 border-emerald-100">
+                  <th className="px-6 py-5 text-left text-[10px] font-black text-emerald-800/40 uppercase tracking-[0.2em]">N° Pièce</th>
+                  <th className="px-6 py-5 text-left text-[10px] font-black text-emerald-800/40 uppercase tracking-[0.2em]">Date</th>
+                  <th className="px-6 py-5 text-left text-[10px] font-black text-emerald-800/40 uppercase tracking-[0.2em]">Description & Détails</th>
+                  <th className="px-6 py-5 text-right text-[10px] font-black text-emerald-800/40 uppercase tracking-[0.2em]">Flux Entrant</th>
+                  <th className="px-6 py-5 text-right text-[10px] font-black text-emerald-800/40 uppercase tracking-[0.2em]">Flux Sortant</th>
+                  <th className="px-6 py-5 text-right text-[10px] font-black text-emerald-800/40 uppercase tracking-[0.2em]">Solde Rapporté</th>
+                  <th className="px-6 py-5 text-center text-[10px] font-black text-emerald-800/40 uppercase tracking-[0.2em]">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-emerald-50">
                 {paginatedEntries.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
-                      {filteredEntries.length === 0 ? 'Aucune écriture trouvée' : 'Aucune écriture sur cette page'}
+                    <td colSpan={7} className="px-6 py-20 text-center">
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center">
+                          <Search className="w-8 h-8 text-emerald-100" />
+                        </div>
+                        <p className="text-[10px] font-black text-emerald-200 uppercase tracking-widest">Aucune écriture enregistrée</p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   paginatedEntries.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-gradient-to-r hover:from-primary/5 hover:to-transparent transition-all duration-200">
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium text-gray-900">
-                        {entry.entry_number}
+                    <tr key={entry.id} className="hover:bg-emerald-50/50 transition-all duration-200 group">
+                      <td className="px-6 py-5 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-1 bg-emerald-50 text-emerald-950 text-[10px] font-black uppercase tracking-widest rounded-lg border border-emerald-100">
+                          {entry.entry_number}
+                        </span>
                       </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
-                        {new Date(entry.entry_date).toLocaleDateString('fr-FR')}
+                      <td className="px-6 py-5 whitespace-nowrap text-[11px] font-black text-emerald-800/60 uppercase">
+                        {new Date(entry.entry_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
-                        {entry.code || '-'}
+                      <td className="px-6 py-5">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-black text-emerald-950 uppercase tracking-tighter line-clamp-1">{entry.description}</span>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            {entry.code && (
+                              <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                {entry.code}
+                              </span>
+                            )}
+                            {entry.numero_piece && (
+                              <span className="text-[9px] font-black text-emerald-400 uppercase tracking-tight italic opacity-60">
+                                Réf: {entry.numero_piece}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-500">
-                        <div className="truncate max-w-[200px] sm:max-w-none">{entry.description}</div>
+                      <td className="px-6 py-5 text-right font-black tabular-nums">
+                        {entry.entrees ? <span className="text-sm text-success">+{formatNumber(entry.entrees)}</span> : <span className="text-emerald-100">-</span>}
                       </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
-                        {entry.numero_piece || '-'}
+                      <td className="px-6 py-5 text-right font-black tabular-nums">
+                        {entry.sorties ? <span className="text-sm text-error">-{formatNumber(entry.sorties)}</span> : <span className="text-emerald-100">-</span>}
                       </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-right text-green-600 font-medium">
-                        {(entry.entrees || 0) > 0
-                          ? formatNumber(entry.entrees || 0)
-                          : '-'}
+                      <td className="px-6 py-5 text-right whitespace-nowrap">
+                        <div className="flex flex-col items-end">
+                          <span className="text-sm font-black text-emerald-950 tabular-nums tracking-tighter">{formatNumber(entry.balance)}</span>
+                          <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mt-0.5">USD</span>
+                        </div>
                       </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-right text-red-600 font-medium">
-                        {(entry.sorties || 0) > 0
-                          ? formatNumber(entry.sorties || 0)
-                          : '-'}
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-right font-bold">
-                        {formatNumber(entry.balance)} $US
-                      </td>
-                      <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {/* Bouton Voir détail */}
+                      <td className="px-6 py-5 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-2 lg:opacity-0 group-hover:opacity-100 transition-all duration-300">
                           <Link href={`/accounting/${entry.id}`}>
-                            <button
-                              className="inline-flex items-center justify-center p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-lg transition-colors duration-200"
-                              title="Voir le détail"
-                            >
-                              <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
+                            <button className="flex items-center justify-center w-10 h-10 bg-white border-2 border-emerald-100 text-emerald-400 hover:text-emerald-950 hover:border-emerald-200 hover:bg-emerald-50 rounded-xl transition-all shadow-sm" title="Détails">
+                              <Eye className="w-5 h-5" />
                             </button>
                           </Link>
-                          {/* Bouton Modifier */}
-                          <Link href={`/accounting/${entry.id}/edit`}>
-                            <button
-                              className="inline-flex items-center justify-center p-2 text-amber-600 hover:text-amber-800 hover:bg-amber-100 rounded-lg transition-colors duration-200"
-                              title="Modifier cette écriture"
-                            >
-                              <Pencil className="w-4 h-4 sm:w-5 sm:h-5" />
-                            </button>
-                          </Link>
-                          {/* Bouton Supprimer (Super Admin uniquement) */}
+                          <button
+                            onClick={() => { setEditingEntryId(entry.id); entryModal.open(); }}
+                            className="flex items-center justify-center w-10 h-10 bg-white border-2 border-blue-100 text-blue-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 rounded-xl transition-all shadow-sm" title="Modifier"
+                          >
+                            <Pencil className="w-5 h-5" />
+                          </button>
                           {profile?.role === 'SUPER_ADMIN_GROUP' && (
                             <button
-                              onClick={() => handleDeleteClick(entry)}
-                              className="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 hover:bg-red-100 rounded-lg transition-colors duration-200"
-                              title="Supprimer cette écriture"
+                              onClick={() => { setEntryToDelete(entry); setDeleteModalOpen(true); }}
+                              className="flex items-center justify-center w-10 h-10 bg-white border-2 border-red-100 text-red-200 hover:text-red-500 hover:border-red-200 hover:bg-red-50 rounded-xl transition-all shadow-sm"
+                              title="Supprimer"
                             >
-                              <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                              <Trash2 className="w-5 h-5" />
                             </button>
                           )}
                         </div>
@@ -697,7 +556,7 @@ function AccountingPageContent() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex justify-center p-4">
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
@@ -707,81 +566,57 @@ function AccountingPageContent() {
             />
           </div>
         )}
+      </div>
 
-        {/* Modal de confirmation de suppression */}
-        {deleteModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            {/* Overlay */}
-            <div 
-              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-              onClick={handleDeleteCancel}
-            />
-            
-            {/* Modal */}
-            <div className="relative bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 transform transition-all">
-              <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-red-100 rounded-full">
-                <Trash2 className="w-6 h-6 text-red-600" />
-              </div>
-              
-              <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
-                Confirmer la suppression
-              </h3>
-              
-              <p className="text-sm text-gray-600 text-center mb-4">
-                Êtes-vous sûr de vouloir supprimer cette écriture ?
-              </p>
-              
-              {entryToDelete && (
-                <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-gray-500">N°:</span>
-                    <span className="font-medium">{entryToDelete.entry_number}</span>
-                  </div>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-gray-500">Date:</span>
-                    <span className="font-medium">{new Date(entryToDelete.entry_date).toLocaleDateString('fr-FR')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Libellé:</span>
-                    <span className="font-medium truncate max-w-[200px]">{entryToDelete.description}</span>
-                  </div>
-                </div>
-              )}
-              
-              <p className="text-xs text-red-600 text-center mb-6">
-                Cette action est irréversible.
-              </p>
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={handleDeleteCancel}
-                  disabled={deleting}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium disabled:opacity-50"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleDeleteConfirm}
-                  disabled={deleting}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {deleting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Suppression...
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="w-4 h-4" />
-                      Supprimer
-                    </>
-                  )}
-                </button>
-              </div>
+      {/* Entry Form Modal (New & Edit) */}
+      <Modal
+        isOpen={entryModal.isOpen}
+        onClose={() => { entryModal.close(); setEditingEntryId(null); }}
+        title={editingEntryId ? "Modifier l'écriture" : "Nouvelle Écriture"}
+        size="lg"
+      >
+        <AccountingEntryForm
+          initialEntityId={entityId}
+          entryId={editingEntryId}
+          onSuccess={() => {
+            entryModal.close();
+            setEditingEntryId(null);
+            fetchEntries();
+          }}
+          onCancel={() => { entryModal.close(); setEditingEntryId(null); }}
+        />
+      </Modal>
+
+      {/* Delete Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-emerald-950/40 backdrop-blur-md" onClick={() => setDeleteModalOpen(false)} />
+          <div className="relative bg-white rounded-xl border-2 border-emerald-100 p-8 max-w-sm w-full shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-red-50 border-2 border-red-100 rounded-xl flex items-center justify-center mx-auto mb-6">
+              <Trash2 className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-lg font-black text-emerald-950 text-center uppercase tracking-widest mb-2">Supprimer l'écriture ?</h3>
+            <p className="text-[10px] text-emerald-800/60 text-center uppercase tracking-widest mb-8 font-black leading-relaxed">
+              Cette action est irréversible et modifiera le solde de caisse certifié.
+            </p>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setDeleteModalOpen(false)}
+                className="flex-1 h-12 text-[10px] font-black uppercase tracking-widest text-emerald-400 hover:text-emerald-600 transition-all"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={deleting}
+                className="flex-1 h-12 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 shadow-xl shadow-red-200 disabled:opacity-50 border-b-4 border-red-700 active:scale-95 transition-all"
+              >
+                {deleting ? 'Suppression...' : 'Confirmer'}
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

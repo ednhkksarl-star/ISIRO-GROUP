@@ -7,7 +7,7 @@ import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
 import { ArrowLeft, Download, Edit } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
@@ -33,6 +33,7 @@ export default function InvoiceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);

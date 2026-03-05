@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react';
 import { HelpCircle } from 'lucide-react';
 import Modal from './Modal';
-import Button from './Button';
-import Input from './Input';
+import { cn } from '@/utils/cn';
 
 interface PromptModalProps {
   isOpen: boolean;
@@ -62,27 +61,36 @@ export default function PromptModal({
       size="sm"
       showCloseButton={true}
     >
-      <div className="py-4 sm:py-6">
-        {/* Icône */}
-        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
-          <HelpCircle className="w-8 h-8 sm:w-10 sm:h-10 text-primary" />
+      <div className="text-center py-6 sm:py-8 px-4">
+        {/* Icon Container */}
+        <div className="relative mx-auto mb-8">
+          <div className={cn(
+            "w-20 h-20 sm:w-24 sm:h-24 rounded-3xl flex items-center justify-center mx-auto animate-in scale-in duration-500",
+            "bg-gradient-to-br from-sky-400 to-sky-600 shadow-sky-200",
+            "shadow-2xl"
+          )}>
+            <HelpCircle className="w-10 h-10 sm:w-12 sm:h-12 text-white" />
+          </div>
+          {/* Subtle pulse ring */}
+          <div className={cn(
+            "absolute inset-0 w-20 h-20 sm:w-24 sm:h-24 rounded-3xl mx-auto animate-ping opacity-20 -z-10",
+            "bg-sky-400"
+          )} />
         </div>
 
-        {/* Titre */}
-        {title && (
-          <h3 className="text-xl sm:text-2xl font-bold text-text mb-3 sm:mb-4 text-center">
+        {/* Title & Description */}
+        <div className="space-y-3 mb-8 text-center">
+          <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             {title}
           </h3>
-        )}
+          <p className="text-slate-500 text-sm sm:text-base font-medium leading-relaxed max-w-xs mx-auto">
+            {message}
+          </p>
+        </div>
 
-        {/* Message */}
-        <p className="text-text-light text-sm sm:text-base mb-4 sm:mb-6 text-center px-4">
-          {message}
-        </p>
-
-        {/* Input */}
-        <div className="mb-6 sm:mb-8 px-4">
-          <Input
+        {/* Input Field */}
+        <div className="mb-8">
+          <input
             type={type}
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -90,28 +98,34 @@ export default function PromptModal({
             placeholder={placeholder}
             required={required}
             autoFocus
-            className="w-full"
+            className={cn(
+              "w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold outline-none",
+              "focus:bg-white focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 transition-all text-center placeholder:text-slate-300"
+            )}
           />
         </div>
 
-        {/* Boutons */}
-        <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4 px-4">
-          <Button
+        {/* Action Buttons */}
+        <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <button
             type="button"
-            variant="secondary"
             onClick={onClose}
-            className="w-full sm:w-auto"
+            className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl text-xs font-black uppercase tracking-[0.2em] hover:bg-slate-200 transition-all active:scale-95"
           >
             {cancelText}
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
             onClick={handleConfirm}
             disabled={required && !value.trim()}
-            className="w-full sm:w-auto"
+            className={cn(
+              "flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-[0.2em] text-white transition-all hover:scale-105 active:scale-95 shadow-xl",
+              "bg-sky-600 hover:bg-sky-700 shadow-sky-200",
+              required && !value.trim() && "opacity-50 pointer-events-none"
+            )}
           >
             {confirmText}
-          </Button>
+          </button>
         </div>
       </div>
     </Modal>

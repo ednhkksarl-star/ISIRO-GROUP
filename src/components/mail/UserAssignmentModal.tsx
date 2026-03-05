@@ -93,9 +93,9 @@ export default function UserAssignmentModal({
         console.error('Hint:', error.hint);
         throw error;
       }
-      
+
       let filteredData = data || [];
-      
+
       // Filtrer côté client si une entité est sélectionnée
       if (selectedEntityId) {
         console.log('Filtrage par entité (côté client):', selectedEntityId);
@@ -114,7 +114,7 @@ export default function UserAssignmentModal({
       } else {
         console.log('Chargement de tous les utilisateurs actifs (sans filtre):', filteredData.length);
       }
-      
+
       setUsers(filteredData);
     } catch (error: any) {
       console.error('Erreur lors du chargement des utilisateurs:', error);
@@ -153,10 +153,10 @@ export default function UserAssignmentModal({
       title="Assigner à un utilisateur"
       size="lg"
     >
-      <div className="space-y-4">
+      <div className="space-y-6">
         {/* Filtre par entité */}
         <div>
-          <label htmlFor="entity-filter" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="entity-filter" className="block text-[10px] font-black uppercase tracking-widest text-emerald-800/40 mb-3 ml-1">
             Filtrer par entité
           </label>
           <select
@@ -164,7 +164,7 @@ export default function UserAssignmentModal({
             name="entity-filter"
             value={selectedEntityId || ''}
             onChange={(e) => setSelectedEntityId(e.target.value || null)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-4 py-3 bg-white border-2 border-emerald-100 rounded-xl text-sm font-bold text-emerald-950 outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer"
           >
             <option value="">Toutes les entités</option>
             {entities.map((entity) => (
@@ -180,7 +180,7 @@ export default function UserAssignmentModal({
           <label htmlFor="user-search" className="sr-only">
             Rechercher un utilisateur
           </label>
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-emerald-400 w-5 h-5" />
           <input
             id="user-search"
             name="user-search"
@@ -188,42 +188,42 @@ export default function UserAssignmentModal({
             placeholder="Rechercher un utilisateur..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full pl-12 pr-4 py-3 bg-white border-2 border-emerald-100 rounded-xl text-sm font-bold text-emerald-950 outline-none focus:border-emerald-500 transition-all placeholder:text-emerald-200"
           />
         </div>
 
         {/* Liste des utilisateurs */}
-        <div className="border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
+        <div className="border-2 border-emerald-100 rounded-xl max-h-96 overflow-y-auto bg-white shadow-sm overflow-hidden">
           {loading ? (
-            <div className="p-8 text-center text-gray-500">Chargement...</div>
+            <div className="p-12 text-center text-emerald-800/30 font-black uppercase tracking-widest text-xs">Chargement...</div>
           ) : filteredUsers.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-12 text-center text-emerald-800/30 font-black uppercase tracking-widest text-xs">
               Aucun utilisateur trouvé
             </div>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y-2 divide-emerald-50">
               <button
                 onClick={() => handleSelect(null)}
-                className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
-                  !currentUserId ? 'bg-primary/5' : ''
-                }`}
+                className={`w-full px-6 py-4 text-left hover:bg-emerald-50 transition-all relative group ${!currentUserId ? 'bg-emerald-100/30' : ''
+                  }`}
               >
-                <div className="font-medium text-gray-900">Non assigné</div>
+                {!currentUserId && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-8 bg-yellow-400 rounded-r-full" />}
+                <div className="font-black text-emerald-950 uppercase tracking-tight text-sm">Non assigné</div>
               </button>
               {filteredUsers.map((user) => (
                 <button
                   key={user.id}
                   onClick={() => handleSelect(user.id)}
-                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors ${
-                    currentUserId === user.id ? 'bg-primary/5' : ''
-                  }`}
+                  className={`w-full px-6 py-4 text-left hover:bg-emerald-50 transition-all relative group ${currentUserId === user.id ? 'bg-emerald-100/30' : ''
+                    }`}
                 >
-                  <div className="font-medium text-gray-900">
+                  {currentUserId === user.id && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-8 bg-yellow-400 rounded-r-full" />}
+                  <div className="font-black text-emerald-950 uppercase tracking-tight text-sm">
                     {user.full_name || user.email}
                   </div>
-                  <div className="text-sm text-gray-500">{user.email}</div>
+                  <div className="text-[10px] font-bold text-emerald-600 tracking-tight mt-0.5">{user.email}</div>
                   {user.entity_id && (
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-[9px] font-black uppercase tracking-widest text-emerald-800/40 mt-2">
                       {getEntityName(user.entity_id)}
                     </div>
                   )}
@@ -234,8 +234,8 @@ export default function UserAssignmentModal({
         </div>
       </div>
 
-      <div className="flex justify-end gap-3 mt-6">
-        <Button variant="secondary" onClick={onClose}>
+      <div className="flex justify-end gap-3 mt-8 pt-6 border-t-2 border-emerald-50">
+        <Button variant="secondary" onClick={onClose} className="bg-white border-2 border-emerald-100 text-emerald-600 hover:bg-emerald-50 rounded-xl px-8 h-12 text-[10px] font-black uppercase tracking-widest">
           Annuler
         </Button>
       </div>

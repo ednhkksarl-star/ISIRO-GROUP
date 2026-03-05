@@ -8,7 +8,7 @@ import { useRouter, useParams } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import { X, FileText, Image as ImageIcon } from 'lucide-react';
 import Image from 'next/image';
 import Button from '@/components/ui/Button';
@@ -40,6 +40,7 @@ export default function EditHouseholdExpensePage() {
   const router = useRouter();
   const params = useParams();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);

@@ -166,10 +166,15 @@ CREATE TABLE accounting_entries (
   entity_id UUID NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
   entry_number VARCHAR(100) NOT NULL,
   entry_date DATE NOT NULL,
+  code VARCHAR(50), -- Ajouté pour correspondre aux types
   description TEXT NOT NULL,
+  numero_piece VARCHAR(100), -- Ajouté pour correspondre aux types
   debit DECIMAL(10,2) DEFAULT 0,
   credit DECIMAL(10,2) DEFAULT 0,
+  entrees DECIMAL(10,2) NOT NULL DEFAULT 0, -- Ajouté pour correspondre aux types et corriger l'erreur 400
+  sorties DECIMAL(10,2) NOT NULL DEFAULT 0, -- Ajouté pour correspondre aux types et corriger l'erreur 400
   balance DECIMAL(10,2) DEFAULT 0,
+  currency VARCHAR(10) DEFAULT 'CDF', -- Ajouté pour correspondre aux types
   reference_type VARCHAR(50),
   reference_id UUID,
   created_by UUID NOT NULL REFERENCES users(id),

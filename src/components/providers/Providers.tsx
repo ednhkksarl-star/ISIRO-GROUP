@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useMemo, useRef } from 
 import { createSupabaseClient } from '@/services/supabaseClient';
 import type { User } from '@supabase/supabase-js';
 import type { UserRole } from '@/types/database.types';
+import { ToastProvider } from '@/components/ui/Toast';
 
 // Configuration de la console pour réduire le bruit (côté client, en développement et production)
 if (typeof window !== 'undefined') {
@@ -106,10 +107,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (error) {
-        // Si l'erreur est PGRST116 (0 rows), l'utilisateur n'existe pas dans la table users
-        if (error.code === 'PGRST116') {
-          console.warn('User profile not found in users table. User ID:', userId);
-          console.warn('Please run: npm run make-super-admin <email> to create the user profile');
+        // PGRST116 = 0 rows, 404 = table non trouvée ou accès bloqué
+        if (error.code === 'PGRST116' || error.message?.includes('404') || (error as any)?.status === 404) {
+          console.warn('Profil non trouvé. Exécutez: npm run make-super-admin <votre@email>');
           setProfile(null);
           return;
         }
@@ -153,8 +153,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
       };
 
       setProfile(profileData);
-    } catch (error: any) {
-      console.error('Error fetching profile:', error);
+    } catch (error: unknown) {
+      const err = error as { message?: string; status?: number; code?: string };
+      if (err?.status === 404 || err?.message?.includes('404') || err?.code === 'PGRST116') {
+        console.warn('Profil non trouvé. Exécutez: npm run make-super-admin <votre@email>');
+      } else {
+        console.error('Error fetching profile:', err);
+      }
       setProfile(null);
     }
   };
@@ -246,11 +251,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, profile, loading, signOut, refreshProfile }}
-    >
-      {children}
-    </AuthContext.Provider>
+    <ToastProvider>
+      <AuthContext.Provider
+        value={{ user, profile, loading, signOut, refreshProfile }}
+      >
+        {children}
+      </AuthContext.Provider>
+    </ToastProvider>
   );
 }
 

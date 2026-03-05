@@ -7,7 +7,7 @@ import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
 import { ArrowLeft, Download } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import { formatNumber } from '@/utils/formatNumber';
 import type { Database } from '@/types/database.types';
 
@@ -33,6 +33,7 @@ export default function ExpenseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [expense, setExpense] = useState<Expense | null>(null);
   const [loading, setLoading] = useState(true);

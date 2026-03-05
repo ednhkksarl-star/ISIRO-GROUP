@@ -7,7 +7,7 @@ import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import type { Database } from '@/types/database.types';
 
 type MailItem = Database['public']['Tables']['mail_items']['Row'];
@@ -42,6 +42,7 @@ export default function MailItemDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [mailItem, setMailItem] = useState<MailItem | null>(null);
   const [loading, setLoading] = useState(true);

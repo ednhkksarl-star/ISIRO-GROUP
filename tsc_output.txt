@@ -1,0 +1,5 @@
+src/app/courriers/page.tsx(136,66): error TS2345: Argument of type '{ status: any; }' is not assignable to parameter of type 'never'.
+src/app/courriers/page.tsx(152,66): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/app/courriers/page.tsx(363,32): error TS2693: 'User' only refers to a type, but is being used as a value here.
+src/app/courriers/page.tsx(425,11): error TS2322: Type '{ isOpen: boolean; onClose: () => void; onConfirm: () => Promise<void>; title: string; message: string; confirmVariant: string; }' is not assignable to type 'IntrinsicAttributes & ConfirmModalProps'.
+  Property 'confirmVariant' does not exist on type 'IntrinsicAttributes & ConfirmModalProps'.

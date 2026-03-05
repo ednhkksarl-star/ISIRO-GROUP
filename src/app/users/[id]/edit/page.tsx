@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Modal from '@/components/ui/Modal';
@@ -13,6 +13,7 @@ import Card from '@/components/ui/Card';
 import { Upload, X, User as UserIcon } from 'lucide-react';
 import Image from 'next/image';
 import { resizeImageToBase64 } from '@/utils/imageUtils';
+import { ROLE_TRANSLATIONS } from '@/utils/roleTranslations';
 import type { UserRole } from '@/types/database.types';
 import type { Database } from '@/types/database.types';
 
@@ -40,6 +41,7 @@ export default function EditUserPage() {
   const params = useParams();
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -86,10 +88,34 @@ export default function EditUserPage() {
         .order('label', { ascending: true });
 
       if (error) throw error;
-      setRoles((data || []) as Role[]);
+
+      const rolesData = (data || []) as Role[];
+
+      if (rolesData.length > 0) {
+        setRoles(rolesData);
+      } else {
+        // Fallback to static roles if table is empty
+        const staticRoles = Object.entries(ROLE_TRANSLATIONS).map(([code, label]) => ({
+          id: code,
+          code,
+          label,
+          description: null,
+          is_active: true
+        }));
+        setRoles(staticRoles);
+      }
     } catch (error: any) {
       console.error('Erreur lors du chargement des rôles:', error);
-      toast.error('Erreur lors du chargement des rôles');
+      // Fallback to static roles on error
+      const staticRoles = Object.entries(ROLE_TRANSLATIONS).map(([code, label]) => ({
+        id: code,
+        code,
+        label,
+        description: null,
+        is_active: true
+      }));
+      setRoles(staticRoles);
+      toast.error('Impossible de charger les rôles de la base de données. Utilisation des rôles par défaut.');
     } finally {
       setLoadingRoles(false);
     }
@@ -107,7 +133,7 @@ export default function EditUserPage() {
       setEntities((data || []) as Entity[]);
     } catch (error: any) {
       console.error('Erreur lors du chargement des entités:', error);
-      toast.error('Erreur lors du chargement des entités');
+      toast.error('Impossible de charger les entités');
     } finally {
       setLoadingEntities(false);
     }
@@ -134,7 +160,7 @@ export default function EditUserPage() {
         setAvatarUrl(userData.avatar_url);
       }
     } catch (error: any) {
-      toast.error('Erreur lors du chargement');
+      toast.error('Impossible de charger les informations de l\'utilisateur');
       console.error(error);
     }
   };
@@ -160,7 +186,7 @@ export default function EditUserPage() {
 
       toast.success('Photo uploadée avec succès');
     } catch (error: any) {
-      toast.error(error.message || 'Erreur lors de l\'upload');
+      toast.error('Impossible de charger la photo');
       console.error(error);
     } finally {
       setUploadingAvatar(false);
@@ -190,7 +216,7 @@ export default function EditUserPage() {
       toast.success('Utilisateur mis à jour avec succès');
       router.push(`/users/${params.id}`);
     } catch (error: any) {
-      toast.error(error.message || 'Erreur lors de la mise à jour');
+      toast.error('Impossible de mettre à jour l\'utilisateur. Veuillez vérifier les informations.');
       console.error(error);
     } finally {
       setLoading(false);

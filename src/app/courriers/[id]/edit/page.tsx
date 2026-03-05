@@ -10,7 +10,7 @@ import { useAuth } from '@/components/providers/Providers';
 import { useEntity } from '@/hooks/useEntity';
 import { useEntityContext } from '@/hooks/useEntityContext';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
@@ -40,6 +40,7 @@ function EditMailItemPageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const { profile } = useAuth();
+  const toast = useToast();
   const { selectedEntityId, setSelectedEntityId } = useEntity();
   const { activeEntityId } = useEntityContext();
   const supabase = createSupabaseClient();

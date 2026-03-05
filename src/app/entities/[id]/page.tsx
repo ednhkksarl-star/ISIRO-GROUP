@@ -7,7 +7,7 @@ import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
 import { getEntityUUID, isValidUUID } from '@/utils/entityHelpers';
 import { formatNumber } from '@/utils/formatNumber';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import {
   TrendingUp,
   TrendingDown,
@@ -61,6 +61,7 @@ export default function EntityDashboardPage() {
   const params = useParams();
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [entity, setEntity] = useState<Entity | null>(null);
   const [stats, setStats] = useState<EntityDashboardStats | null>(null);

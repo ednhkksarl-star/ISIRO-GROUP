@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { Plus, Search, Trash2, Edit, Home, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet } from 'lucide-react';
+import { Plus, Search, Trash2, Edit, Home, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, Filter } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
+import { cn } from '@/utils/cn';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
-import BackButton from '@/components/ui/BackButton';
 import Pagination from '@/components/ui/Pagination';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import Modal from '@/components/ui/Modal';
@@ -49,6 +49,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 export default function MenagePage() {
   const { profile } = useAuth();
+  const toast = useToast();
   const [expenses, setExpenses] = useState<HouseholdExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,6 +63,10 @@ export default function MenagePage() {
   const [monthlyBudget, setMonthlyBudget] = useState<number | null>(null);
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [budgetAmount, setBudgetAmount] = useState<string>('');
+  const [errorExpenses, setErrorExpenses] = useState(false);
+  const [errorBudget, setErrorBudget] = useState(false);
+
+  const isFetchingRef = useRef(false);
 
   // Vérifier que seul le super admin peut accéder
   useEffect(() => {
@@ -71,17 +76,12 @@ export default function MenagePage() {
     }
   }, [profile]);
 
-  useEffect(() => {
-    if (profile?.role === 'SUPER_ADMIN_GROUP') {
-      fetchExpenses();
-      fetchMonthlyBudget();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile]);
-
-  const fetchExpenses = async () => {
+  const fetchExpenses = useCallback(async () => {
+    if (isFetchingRef.current) return;
     try {
+      isFetchingRef.current = true;
       setLoading(true);
+      setErrorExpenses(false);
       let query = (supabase.from('household_expenses') as any)
         .select('*')
         .order('expense_date', { ascending: false });
@@ -95,27 +95,28 @@ export default function MenagePage() {
 
       if (error) throw error;
       setExpenses(data || []);
+      setErrorExpenses(false);
     } catch (error: any) {
+      setErrorExpenses(true);
       toast.error('Erreur lors du chargement des dépenses');
       console.error(error);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
-  };
+  }, [profile?.id, profile?.role, supabase]);
 
-  const fetchMonthlyBudget = async () => {
+  const fetchMonthlyBudget = useCallback(async () => {
     if (!profile?.id) return;
 
     try {
+      setErrorBudget(false);
       const now = new Date();
       const currentMonth = now.getMonth() + 1;
       const currentYear = now.getFullYear();
 
       // Pour les super admins, chercher le budget partagé (le plus récent de n'importe quel super admin)
-      // Pour les autres, chercher seulement leur propre budget
       if (profile.role === 'SUPER_ADMIN_GROUP') {
-        // Chercher le budget le plus récent de n'importe quel super admin pour ce mois
-        // Comme c'est un seul foyer, tous les super admins partagent le même budget
         const { data: allBudgets, error: allBudgetsError } = await (supabase.from('household_budgets') as any)
           .select('*')
           .eq('budget_month', currentMonth)
@@ -128,7 +129,6 @@ export default function MenagePage() {
         }
 
         if (allBudgets && allBudgets.length > 0) {
-          // Utiliser le budget le plus récent (peu importe à qui il appartient)
           const budget = allBudgets[0];
           setMonthlyBudget(Number(budget.budget_amount));
           setBudgetAmount(budget.budget_amount.toString());
@@ -137,7 +137,6 @@ export default function MenagePage() {
           setBudgetAmount('');
         }
       } else {
-        // Pour les non-super admins, chercher seulement leur propre budget
         const { data, error } = await (supabase.from('household_budgets') as any)
           .select('*')
           .eq('user_id', profile.id)
@@ -157,10 +156,20 @@ export default function MenagePage() {
           setBudgetAmount('');
         }
       }
+      setErrorBudget(false);
     } catch (error: any) {
       console.error('Erreur lors du chargement du budget:', error);
+      setErrorBudget(true);
+      toast.error('Erreur lors du chargement du budget');
     }
-  };
+  }, [profile?.id, profile?.role, supabase]);
+
+  useEffect(() => {
+    if (profile?.role === 'SUPER_ADMIN_GROUP') {
+      fetchExpenses();
+      fetchMonthlyBudget();
+    }
+  }, [profile?.id, profile?.role, fetchExpenses, fetchMonthlyBudget]);
 
   const handleSaveBudget = async () => {
     if (!profile?.id) return;
@@ -294,7 +303,7 @@ export default function MenagePage() {
         return expenseDate.getMonth() === now.getMonth() && expenseDate.getFullYear() === now.getFullYear();
       })
       .reduce((sum, exp) => sum + Number(exp.amount), 0);
-    
+
     const byCategory = expenses.reduce((acc, exp) => {
       const cat = exp.category;
       acc[cat] = (acc[cat] || 0) + Number(exp.amount);
@@ -357,234 +366,282 @@ export default function MenagePage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
-        <BackButton />
-        
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-2">
-              <Home className="w-8 h-8" />
-              Ménage
-            </h1>
-            <p className="text-gray-600 mt-1 text-sm sm:text-base">
-              Gestion de vos dépenses personnelles
-            </p>
+      {/* Header Block - Repertoire Style */}
+      <div className="bg-white border-2 border-emerald-100 p-6 sm:p-8 rounded-xl relative overflow-hidden group shadow-sm transition-all hover:border-emerald-200">
+        <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-50 rounded-full -mr-24 -mt-24 transition-transform duration-500 group-hover:scale-110 opacity-50" />
+
+        <div className="flex flex-col md:flex-row justify-between items-center sm:items-end gap-6 relative z-10">
+          <div className="space-y-4 text-center md:text-left">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
+              <Home className="w-4 h-4 text-emerald-600" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Gestion du Foyer</span>
+            </div>
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-emerald-950 uppercase leading-none">Ménage</h1>
+              <div className="h-1.5 w-24 bg-yellow-400 mt-4 rounded-full" />
+            </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
               onClick={budgetModal.open}
-              className="bg-green-600 hover:bg-green-700 text-white"
-              icon={<Wallet className="w-5 h-5" />}
+              className="h-14 px-8 rounded-xl bg-white border-2 border-emerald-100 text-emerald-600 hover:bg-emerald-50 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-3 shadow-sm"
             >
-              BUDGET MENSUEL
-            </Button>
+              <Wallet className="w-5 h-5" />
+              Budget Mensuel
+            </button>
             <Link href="/menage/new">
-              <Button icon={<Plus className="w-5 h-5" />}>
-                Nouvelle dépense/épargne
-              </Button>
+              <button className="h-14 px-8 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-success/20 border-b-4 border-emerald-700 transition-all active:scale-95 flex items-center gap-3">
+                <Plus className="w-5 h-5 stroke-[4]" />
+                Nouvelle dépense
+              </button>
             </Link>
           </div>
         </div>
+      </div>
 
-        {/* Statistiques */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total dépenses</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {formatNumber(stats.totalExpenses)} $US
-                </p>
-              </div>
-              <DollarSign className="w-8 h-8 text-primary" />
+      {/* Statistiques - Redesigned Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+        <div className="bg-white border-2 border-emerald-100 p-6 rounded-xl relative overflow-hidden group hover:border-emerald-300 transition-all shadow-sm">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-50 rounded-full -mr-8 -mt-8 opacity-50" />
+          <div className="flex flex-col relative z-10">
+            <div className="flex justify-between items-start mb-1">
+              <span className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest">Total dépenses</span>
+              {errorExpenses && (
+                <button onClick={fetchExpenses} className="text-[8px] font-black text-rose-500 uppercase tracking-tighter hover:underline">Réessayer</button>
+              )}
             </div>
-          </Card>
-          <Card>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Ce mois</p>
-                <p className={`text-2xl font-bold ${stats.isOverBudget ? 'text-red-600' : 'text-gray-900'}`}>
-                  {formatNumber(stats.monthlyExpenses)} $US
-                </p>
-                {stats.monthlyBudget !== null && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Budget: {formatNumber(stats.monthlyBudget)} $US
-                    {stats.isOverBudget && stats.budgetExceeded !== null && (
-                      <span className="text-red-600 font-semibold ml-2">
-                        (+{formatNumber(stats.budgetExceeded)} $US)
-                      </span>
-                    )}
-                    {!stats.isOverBudget && stats.budgetRemaining !== null && (
-                      <span className="text-green-600 font-semibold ml-2">
-                        (Reste: {formatNumber(stats.budgetRemaining)} $US)
-                      </span>
-                    )}
-                  </p>
-                )}
-              </div>
-              <Calendar className={`w-8 h-8 ${stats.isOverBudget ? 'text-red-600' : 'text-primary'}`} />
+            {loading ? (
+              <div className="h-8 w-32 bg-emerald-50 animate-pulse rounded-lg" />
+            ) : errorExpenses ? (
+              <span className="text-xl font-black text-rose-500 uppercase tracking-tighter">Erreur de flux</span>
+            ) : (
+              <span className="text-2xl font-black text-emerald-950 tabular-nums leading-tight">
+                {formatNumber(stats.totalExpenses)} $
+              </span>
+            )}
+            <div className="flex items-center gap-2 mt-3 p-2 bg-emerald-50 rounded-lg">
+              <DollarSign className="w-4 h-4 text-emerald-400" />
+              <span className="text-[9px] font-black text-emerald-800 uppercase tracking-tight">Flux total foyer</span>
             </div>
-          </Card>
-          <Card>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Épargne</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {formatNumber(stats.savings)} $US
-                </p>
-              </div>
-              <TrendingUp className="w-8 h-8 text-green-600" />
-            </div>
-          </Card>
-          <Card>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Nombre de dépenses</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.count}</p>
-              </div>
-              <TrendingDown className="w-8 h-8 text-primary" />
-            </div>
-          </Card>
+          </div>
         </div>
 
-        {/* Filtres */}
-        <div className="bg-white rounded-lg shadow p-4 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Rechercher une dépense..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
+        <div className={cn(
+          "bg-white border-2 p-6 rounded-xl relative overflow-hidden group transition-all shadow-sm",
+          (stats.isOverBudget || errorExpenses || errorBudget) ? "border-rose-100 hover:border-rose-300" : "border-emerald-100 hover:border-emerald-300"
+        )}>
+          <div className={cn("absolute right-0 top-0 w-1.5 h-full", (stats.isOverBudget || errorExpenses || errorBudget) ? "bg-rose-500" : "bg-emerald-500")} />
+          <div className="flex flex-col relative z-10">
+            <div className="flex justify-between items-start mb-1">
+              <span className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest">Dépenses ce mois</span>
+              {(errorExpenses || errorBudget) && (
+                <button
+                  onClick={() => { fetchExpenses(); fetchMonthlyBudget(); }}
+                  className="text-[8px] font-black text-rose-500 uppercase tracking-tighter hover:underline"
+                >
+                  Réessayer
+                </button>
+              )}
             </div>
+
+            {loading ? (
+              <div className="h-8 w-24 bg-emerald-50 animate-pulse rounded-lg" />
+            ) : errorExpenses ? (
+              <span className="text-xl font-black text-rose-500 uppercase tracking-tighter">Erreur de données</span>
+            ) : (
+              <span className={cn("text-2xl font-black tabular-nums leading-tight", stats.isOverBudget ? "text-rose-600" : "text-emerald-950")}>
+                {formatNumber(stats.monthlyExpenses)} $
+              </span>
+            )}
+
+            {loading ? (
+              <div className="mt-4 h-4 w-full bg-emerald-50 animate-pulse rounded-full" />
+            ) : errorBudget ? (
+              <div className="mt-3 p-2 bg-rose-50 rounded-lg">
+                <p className="text-[8px] font-black text-rose-600 uppercase">Erreur chargement budget</p>
+              </div>
+            ) : stats.monthlyBudget !== null ? (
+              <div className="mt-3 space-y-2">
+                <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-widest">
+                  <span className="text-emerald-800/60">Budget: {formatNumber(stats.monthlyBudget)} $</span>
+                  {stats.isOverBudget ? (
+                    <span className="text-rose-600">Dépassement</span>
+                  ) : (
+                    <span className="text-emerald-600">En règle</span>
+                  )}
+                </div>
+                <div className="w-full h-1.5 bg-emerald-50 rounded-full overflow-hidden">
+                  <div
+                    className={cn("h-full transition-all duration-1000", stats.isOverBudget ? "bg-rose-500" : "bg-emerald-500")}
+                    style={{ width: `${Math.min((stats.monthlyExpenses / (stats.monthlyBudget || 1)) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 p-2 bg-emerald-50 rounded-lg border border-emerald-100 border-dashed">
+                <p className="text-[8px] font-black text-emerald-800/40 uppercase tracking-tighter text-center">Aucun budget défini</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white border-2 border-emerald-100 p-6 rounded-xl relative overflow-hidden group hover:border-emerald-300 transition-all shadow-sm">
+          <div className="absolute right-0 top-0 w-1.5 h-full bg-yellow-400" />
+          <div className="flex flex-col relative z-10">
+            <div className="flex justify-between items-start mb-1">
+              <span className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest">Épargne cumulée</span>
+              {errorExpenses && (
+                <button onClick={fetchExpenses} className="text-[8px] font-black text-rose-500 uppercase tracking-tighter hover:underline">Réessayer</button>
+              )}
+            </div>
+            {loading ? (
+              <div className="h-8 w-24 bg-emerald-50 animate-pulse rounded-lg" />
+            ) : errorExpenses ? (
+              <span className="text-xl font-black text-rose-500 uppercase tracking-tighter">Erreur</span>
+            ) : (
+              <span className="text-2xl font-black text-emerald-950 tabular-nums leading-tight">
+                {formatNumber(stats.savings)} $
+              </span>
+            )}
+            <div className="flex items-center gap-2 mt-3 p-2 bg-yellow-50 rounded-lg">
+              <TrendingUp className="w-4 h-4 text-yellow-600" />
+              <span className="text-[9px] font-black text-yellow-800 uppercase tracking-tight">Croissance du capital</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white border-2 border-emerald-100 p-6 rounded-xl relative overflow-hidden group hover:border-emerald-300 transition-all shadow-sm">
+          <div className="flex flex-col relative z-10">
+            <span className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest mb-1">Nombre d'opérations</span>
+            <span className="text-2xl font-black text-emerald-950 tabular-nums leading-tight">{stats.count}</span>
+            <div className="flex items-center gap-2 mt-3 p-2 bg-emerald-50 rounded-lg">
+              <Calendar className="w-4 h-4 text-emerald-400" />
+              <span className="text-[9px] font-black text-emerald-800 uppercase tracking-tight">Activité ménage</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters Block - Repertoire Style */}
+      <div className="bg-white border-2 border-emerald-100 p-2 rounded-xl flex flex-col lg:flex-row gap-2 transition-all hover:border-emerald-200 shadow-sm mt-6">
+        <div className="flex-1 relative group">
+          <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400 group-focus-within:text-emerald-600 transition-colors" />
+          <input
+            type="text"
+            placeholder="Rechercher une opération (description, fournisseur...)"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full h-12 pl-14 pr-6 bg-transparent text-sm font-bold text-emerald-950 outline-none placeholder:text-emerald-200"
+          />
+        </div>
+
+        <div className="h-px lg:h-8 lg:w-px bg-emerald-100 self-center hidden lg:block" />
+
+        <div className="flex flex-col sm:flex-row gap-2 p-1">
+          <div className="relative">
+            <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-emerald-400 pointer-events-none" />
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              title="Filtrer par catégorie"
-              aria-label="Filtrer les dépenses par catégorie"
+              className="h-10 pl-10 pr-10 bg-emerald-50 border-none rounded-lg text-[10px] font-black uppercase tracking-widest text-emerald-800 appearance-none focus:ring-2 focus:ring-emerald-500/10 transition-all w-full sm:w-48 cursor-pointer hover:bg-emerald-100"
             >
-              <option value="all">Toutes les catégories</option>
+              <option value="all">Toutes catégories</option>
               {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
+                <option key={value} value={value}>{label}</option>
               ))}
             </select>
           </div>
         </div>
+      </div>
 
-        {/* Table */}
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      {/* Table - Redesigned */}
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+        </div>
+      ) : filteredExpenses.length === 0 ? (
+        <div className="text-center py-20 bg-white border-2 border-emerald-100 rounded-xl mt-6">
+          <div className="flex flex-col items-center gap-4">
+            <div className="p-6 bg-emerald-50 rounded-full">
+              <Search className="w-12 h-12 text-emerald-200" />
+            </div>
+            <p className="text-emerald-800 font-bold uppercase text-xs tracking-[0.2em]">
+              Aucune opération trouvée
+            </p>
           </div>
-        ) : filteredExpenses.length === 0 ? (
-          <Card>
-            <div className="text-center py-12">
-              <p className="text-gray-500">Aucune dépense enregistrée</p>
-            </div>
-          </Card>
-        ) : (
-          <>
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">
-                        Date
-                      </th>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
-                        Catégorie
-                      </th>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Description
-                      </th>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Montant
-                      </th>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
-                        Fournisseur/Travailleur
-                      </th>
-                      <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedExpenses.map((expense) => (
-                      <tr key={expense.id} className="hover:bg-gray-50">
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 hidden sm:table-cell">
-                          {new Date(expense.expense_date).toLocaleDateString('fr-FR')}
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap hidden md:table-cell">
-                          <span className="px-2 py-1 text-[10px] sm:text-xs font-semibold rounded-full bg-primary/10 text-primary">
-                            {CATEGORY_LABELS[expense.category] || expense.category}
-                          </span>
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-900">
-                          <div className="truncate max-w-[200px] sm:max-w-none">
+        </div>
+      ) : (
+        <div className="mt-6">
+          <div className="bg-white border-2 border-emerald-100 rounded-xl overflow-hidden shadow-sm transition-all hover:border-emerald-200">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y-2 divide-emerald-50">
+                <thead className="bg-emerald-50/50">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-[10px] font-black text-emerald-950 uppercase tracking-widest">Date</th>
+                    <th className="px-6 py-4 text-left text-[10px] font-black text-emerald-950 uppercase tracking-widest">Catégorie</th>
+                    <th className="px-6 py-4 text-left text-[10px] font-black text-emerald-950 uppercase tracking-widest">Détails</th>
+                    <th className="px-6 py-4 text-right text-[10px] font-black text-emerald-950 uppercase tracking-widest">Montant</th>
+                    <th className="px-6 py-4 text-right text-[10px] font-black text-emerald-950 uppercase tracking-widest">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y-2 divide-emerald-50">
+                  {paginatedExpenses.map((expense) => (
+                    <tr key={expense.id} className="group hover:bg-emerald-50/30 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap text-xs font-bold text-emerald-900/60">
+                        {new Date(expense.expense_date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="px-3 py-1 text-[10px] font-black rounded-lg bg-emerald-100 text-emerald-800 uppercase tracking-tighter">
+                          {CATEGORY_LABELS[expense.category] || expense.category}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-black text-emerald-950 uppercase leading-none mb-1 group-hover:text-emerald-700 transition-colors line-clamp-1">
                             {expense.description}
-                            {expense.is_recurring && (
-                              <span className="ml-2 text-xs text-gray-500">
-                                (Récurrent: {expense.recurring_frequency})
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium">
-                          {(() => {
-                            const expenseDate = new Date(expense.expense_date);
-                            const now = new Date();
-                            const isCurrentMonth = expenseDate.getMonth() === now.getMonth() && expenseDate.getFullYear() === now.getFullYear();
-                            // Si le budget est dépassé ce mois, toutes les dépenses du mois sont en rouge
-                            const isOverBudget = monthlyBudget !== null && isCurrentMonth && stats.isOverBudget;
-                            const expenseAmount = Number(expense.amount);
-                            
-                            return (
-                              <span className={isOverBudget ? 'text-red-600 font-semibold' : 'text-gray-900'}>
-                                {formatNumber(expenseAmount)} $US
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-900 hidden lg:table-cell">
-                          <div className="truncate max-w-[150px] xl:max-w-none">
-                            {expense.worker_name || expense.vendor_name || '-'}
-                          </div>
-                        </td>
-                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium">
-                          <div className="flex items-center gap-1 sm:gap-2">
-                            <Link href={`/menage/${expense.id}/edit`} prefetch={false}>
-                              <Button variant="secondary" size="sm" icon={<Edit className="w-3 h-3 sm:w-4 sm:h-4" />} className="text-xs">
-                                <span className="hidden sm:inline">Modifier</span>
-                              </Button>
-                            </Link>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              icon={<Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />}
-                              onClick={() => {
-                                setExpenseToDelete(expense.id);
-                                deleteModal.open();
-                              }}
-                              className="text-xs"
-                            >
-                              <span className="hidden sm:inline">Supprimer</span>
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest">
+                            {expense.worker_name || expense.vendor_name || 'Divers'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <div className="flex flex-col items-end">
+                          <span className={cn(
+                            "text-sm font-black tabular-nums transition-colors",
+                            stats.isOverBudget && (new Date(expense.expense_date).getMonth() === new Date().getMonth()) ? "text-rose-600" : "text-emerald-950"
+                          )}>
+                            {formatNumber(expense.amount)} $
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                          <Link href={`/menage/${expense.id}/edit`}>
+                            <button className="p-2 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all">
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          </Link>
+                          <button
+                            onClick={() => {
+                              setExpenseToDelete(expense.id);
+                              deleteModal.open();
+                            }}
+                            className="p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </div>
 
+          <div className="mt-8">
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
@@ -592,83 +649,103 @@ export default function MenagePage() {
               totalItems={filteredExpenses.length}
               itemsPerPage={itemsPerPage}
             />
-          </>
-        )}
+          </div>
+        </div>
+      )}
 
-        <ConfirmModal
-          isOpen={deleteModal.isOpen}
-          onClose={deleteModal.close}
-          onConfirm={handleDelete}
-          title="Supprimer la dépense"
-          message="Êtes-vous sûr de vouloir supprimer cette dépense ? Cette action est irréversible."
-        />
+      <ConfirmModal
+        isOpen={deleteModal.isOpen}
+        onClose={deleteModal.close}
+        onConfirm={handleDelete}
+        title="Supprimer la dépense"
+        message="Êtes-vous sûr de vouloir supprimer cette dépense ? Cette action est irréversible."
+        variant="danger"
+        confirmText="Supprimer"
+        cancelText="Annuler"
+      />
 
-        {/* Modal Budget Mensuel */}
-        <Modal
-          isOpen={budgetModal.isOpen}
-          onClose={budgetModal.close}
-          title="Budget Mensuel"
-          size="sm"
-        >
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Montant du budget mensuel (USD)
-              </label>
-              <Input
+      {/* Modal Budget Mensuel - Redesigned */}
+      <Modal
+        isOpen={budgetModal.isOpen}
+        onClose={budgetModal.close}
+        title="Configuration du Budget"
+        size="sm"
+      >
+        <div className="space-y-6">
+          <div className="bg-emerald-50 border-2 border-emerald-100 p-4 rounded-xl">
+            <label className="block text-[10px] font-black text-emerald-800 uppercase tracking-widest mb-3">
+              Cible Mensuelle ($ USD)
+            </label>
+            <div className="relative">
+              <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
+              <input
                 type="number"
-                step="0.01"
+                step="0.1"
                 min="0"
                 value={budgetAmount}
                 onChange={(e) => setBudgetAmount(e.target.value)}
                 placeholder="0.00"
-                className="w-full"
+                className="w-full h-12 pl-10 pr-4 bg-white border-2 border-emerald-100 rounded-lg text-sm font-black text-emerald-950 outline-none focus:border-emerald-500 transition-all tabular-nums"
               />
-              <p className="text-xs text-gray-500 mt-2">
-                Définissez votre budget mensuel pour suivre vos dépenses et épargnes.
-              </p>
             </div>
-            {monthlyBudget !== null && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-800">
-                  <strong>Budget actuel:</strong>{' '}
-                  {formatNumber(monthlyBudget)} $US
-                </p>
-                <p className="text-sm text-blue-800 mt-1">
-                  <strong>Dépenses ce mois:</strong>{' '}
-                  {formatNumber(stats.monthlyExpenses)} $US
-                </p>
-                {stats.isOverBudget && stats.budgetExceeded !== null && (
-                  <p className="text-sm text-red-600 font-semibold mt-1">
-                    ⚠️ Dépassement: {formatNumber(stats.budgetExceeded)} $US
-                  </p>
-                )}
-                {!stats.isOverBudget && stats.budgetRemaining !== null && (
-                  <p className="text-sm text-green-600 font-semibold mt-1">
-                    ✓ Reste: {formatNumber(stats.budgetRemaining)} $US
-                  </p>
-                )}
-              </div>
-            )}
-            <div className="flex justify-end gap-3 pt-4">
-              <Button
-                variant="secondary"
-                onClick={budgetModal.close}
-                disabled={budgetLoading}
-              >
-                Annuler
-              </Button>
-              <Button
-                onClick={handleSaveBudget}
-                loading={budgetLoading}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                Enregistrer
-              </Button>
-            </div>
+            <p className="text-[10px] font-bold text-emerald-800/40 mt-3 uppercase tracking-tight">
+              Le budget permet de suivre le dépassement en temps réel.
+            </p>
           </div>
-        </Modal>
-      </div>
+
+          {monthlyBudget !== null && (
+            <div className={cn(
+              "p-4 rounded-xl border-2 transition-all",
+              stats.isOverBudget ? "bg-red-50 border-red-100 shadow-sm shadow-red-500/5 transition-all" : "bg-emerald-50 border-emerald-100 shadow-sm shadow-emerald-500/5 transition-all"
+            )}>
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest leading-none">État du mois</span>
+                <div className={cn(
+                  "px-2 py-1 rounded text-[8px] font-black uppercase tracking-widest leading-none",
+                  stats.isOverBudget ? "bg-red-500 text-white" : "bg-emerald-500 text-white"
+                )}>
+                  {stats.isOverBudget ? 'Dépassement' : 'Sous budget'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col">
+                  <span className="text-sm font-black text-emerald-950 tabular-nums leading-none mb-1">{formatNumber(stats.monthlyExpenses)} $</span>
+                  <span className="text-[8px] font-black text-emerald-800/40 uppercase tracking-widest">Utilisé</span>
+                </div>
+                <div className="flex flex-col text-right">
+                  <span className={cn(
+                    "text-sm font-black tabular-nums leading-none mb-1",
+                    stats.isOverBudget ? "text-red-500" : "text-emerald-500"
+                  )}>
+                    {stats.isOverBudget ? `+${formatNumber(stats.budgetExceeded || 0)}` : `${formatNumber(stats.budgetRemaining || 0)}`} $
+                  </span>
+                  <span className="text-[8px] font-black text-emerald-800/40 uppercase tracking-widest">
+                    {stats.isOverBudget ? 'Excédent' : 'Disponible'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={budgetModal.close}
+              disabled={budgetLoading}
+              className="flex-1 h-12 rounded-xl bg-white border-2 border-emerald-100 text-[10px] font-black uppercase tracking-widest text-emerald-800 hover:bg-emerald-50 transition-all active:scale-95"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleSaveBudget}
+              disabled={budgetLoading}
+              className="flex-1 h-12 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 shadow-lg shadow-emerald-500/10 border-b-4 border-emerald-700 transition-all active:scale-95 flex items-center justify-center"
+            >
+              {budgetLoading ? 'Enregistrement...' : 'Confirmer'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </AppLayout>
   );
 }

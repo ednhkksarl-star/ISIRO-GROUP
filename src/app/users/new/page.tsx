@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Modal from '@/components/ui/Modal';
 import { UserPlus, Upload, X } from 'lucide-react';
 import Image from 'next/image';
 import { resizeImageToBase64 } from '@/utils/imageUtils';
+import { ROLE_TRANSLATIONS } from '@/utils/roleTranslations';
 import type { UserRole } from '@/types/database.types';
 
 interface Role {
@@ -31,6 +32,7 @@ interface Entity {
 export default function NewUserPage() {
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -71,32 +73,45 @@ export default function NewUserPage() {
         .eq('is_active', true)
         .order('label', { ascending: true });
 
-      if (error) {
-        console.error('Erreur Supabase lors du chargement des rôles:', error);
-        console.error('Code erreur:', error.code);
-        console.error('Message:', error.message);
-        console.error('Details:', error.details);
-        throw error;
-      }
+      if (error) throw error;
 
       const rolesData = (data || []) as Role[];
-      console.log('Rôles chargés:', rolesData.length, rolesData);
-      
+
       if (rolesData.length > 0) {
         setRoles(rolesData);
-        // Définir le premier rôle par défaut
         if (!formData.role) {
           setFormData(prev => ({ ...prev, role: rolesData[0].code }));
         }
       } else {
-        console.warn('Aucun rôle actif trouvé dans la base de données');
-        toast.warn('Aucun rôle actif disponible. Veuillez créer des rôles dans la page /roles');
+        // Fallback to static roles if table is empty
+        const staticRoles = Object.entries(ROLE_TRANSLATIONS).map(([code, label]) => ({
+          id: code,
+          code,
+          label,
+          description: null,
+          is_active: true
+        }));
+        setRoles(staticRoles);
+        if (!formData.role) {
+          setFormData(prev => ({ ...prev, role: staticRoles[0].code }));
+        }
       }
     } catch (error: any) {
       console.error('Erreur lors du chargement des rôles:', error);
-      const errorMessage = error.message || error.details || 'Erreur lors du chargement des rôles';
-      toast.error(`Erreur lors du chargement des rôles: ${errorMessage}`);
-      setRoles([]); // S'assurer que la liste est vide en cas d'erreur
+      // Fallback to static roles on error
+      const staticRoles = Object.entries(ROLE_TRANSLATIONS).map(([code, label]) => ({
+        id: code,
+        code,
+        label,
+        description: null,
+        is_active: true
+      }));
+      setRoles(staticRoles);
+      if (!formData.role && staticRoles.length > 0) {
+        setFormData(prev => ({ ...prev, role: staticRoles[0].code }));
+      }
+      // Toast message refined to be user-friendly with deduplication
+      toast.error('Impossible de charger les rôles de la base de données. Utilisation des rôles par défaut.');
     } finally {
       setLoadingRoles(false);
     }
@@ -120,17 +135,16 @@ export default function NewUserPage() {
 
       const entitiesData = (data || []) as Entity[];
       console.log('Entités chargées:', entitiesData.length, entitiesData);
-      
+
       if (entitiesData.length > 0) {
         setEntities(entitiesData);
       } else {
         console.warn('Aucune entité trouvée dans la base de données');
-        toast.warn('Aucune entité disponible. Veuillez créer des entités dans la page /entities');
+        toast.warning('Aucune entité disponible. Veuillez créer des entités dans la page /entities');
       }
     } catch (error: any) {
       console.error('Erreur lors du chargement des entités:', error);
-      const errorMessage = error.message || error.details || 'Erreur lors du chargement des entités';
-      toast.error(`Erreur lors du chargement des entités: ${errorMessage}`);
+      toast.error('Impossible de charger les entités');
       setEntities([]); // S'assurer que la liste est vide en cas d'erreur
     } finally {
       setLoadingEntities(false);
@@ -146,7 +160,7 @@ export default function NewUserPage() {
       setAvatarUrl(base64Image);
       toast.success('Photo chargée avec succès');
     } catch (error: any) {
-      toast.error(error.message || 'Erreur lors du chargement de la photo');
+      toast.error('Impossible de charger la photo');
       console.error(error);
     } finally {
       setUploadingAvatar(false);
@@ -190,7 +204,7 @@ export default function NewUserPage() {
 
       if (!response.ok) {
         // Afficher les détails de l'erreur si disponibles
-        const errorMessage = data.details 
+        const errorMessage = data.details
           ? `${data.error}: ${data.details}`
           : data.error || 'Erreur lors de la création de l\'utilisateur';
         throw new Error(errorMessage);
@@ -199,7 +213,7 @@ export default function NewUserPage() {
       toast.success('Utilisateur créé avec succès');
       router.push('/users?refresh=true');
     } catch (error: any) {
-      toast.error(error.message || 'Erreur lors de la création');
+      toast.error('Impossible de créer l\'utilisateur. Veuillez vérifier les informations.');
       console.error(error);
     } finally {
       setLoading(false);

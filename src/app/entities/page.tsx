@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import { createSupabaseClient } from '@/services/supabaseClient';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import { Plus, Edit, Trash2, Search, Upload, X, Image as ImageIcon } from 'lucide-react';
 import Image from 'next/image';
+import { cn } from '@/utils/cn';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Modal from '@/components/ui/Modal';
@@ -28,6 +29,7 @@ const ENTITY_CODES: { value: EntityCode; label: string }[] = [
 
 export default function EntitiesPage() {
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +49,7 @@ export default function EntitiesPage() {
   const [uploadingWatermark, setUploadingWatermark] = useState(false);
   const deleteModal = useModal();
   const [entityToDelete, setEntityToDelete] = useState<string | null>(null);
+  const [error, setError] = useState(false);
 
   // Only Super Admin can manage entities (create, update, delete)
   // Admin Entity can view but not manage
@@ -65,6 +68,7 @@ export default function EntitiesPage() {
   const fetchEntities = async () => {
     try {
       setLoading(true);
+      setError(false);
       const { data, error } = await supabase
         .from('entities')
         .select('*')
@@ -72,7 +76,9 @@ export default function EntitiesPage() {
 
       if (error) throw error;
       setEntities(data || []);
+      setError(false);
     } catch (error: any) {
+      setError(true);
       toast.error('Erreur lors du chargement des entités');
       console.error(error);
     } finally {
@@ -110,7 +116,7 @@ export default function EntitiesPage() {
     const setUploading = type === 'logo' ? setUploadingLogo : type === 'header' ? setUploadingHeader : setUploadingWatermark;
 
     setUploading(true);
-    
+
     // Vérifier le type de fichier
     if (!file.type.startsWith('image/')) {
       toast.error('Le fichier doit être une image');
@@ -201,7 +207,7 @@ export default function EntitiesPage() {
 
         if (insertError) throw insertError;
         toast.success('Entité créée');
-        
+
         // Si on a créé une nouvelle entité avec des images base64, on peut les convertir en URLs Supabase Storage si nécessaire
         // Pour l'instant, on stocke directement en base64 comme pour les avatars utilisateurs
       }
@@ -233,173 +239,232 @@ export default function EntitiesPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-text">Entités</h1>
-            <p className="text-text-light mt-1 text-sm sm:text-base">
-              Gérer les filiales et entités du groupe
-            </p>
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-1000 pb-10">
+        {/* Header Block - Repertoire Style */}
+        <div className="bg-white border-2 border-emerald-100 p-6 rounded-xl relative overflow-hidden group shadow-sm transition-all hover:border-emerald-200">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-50 rounded-full -mr-24 -mt-24 transition-transform duration-500 group-hover:scale-110 opacity-50" />
+
+          <div className="flex flex-col md:flex-row justify-between items-center sm:items-end gap-6 relative z-10">
+            <div className="space-y-4 text-center md:text-left">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
+                <Image src="/logo.png" alt="Logo" width={16} height={16} className="opacity-80" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">Architecture & Filiales</span>
+              </div>
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-emerald-950 uppercase leading-none">Entités</h1>
+                <div className="h-1.5 w-24 bg-yellow-400 mt-4 rounded-full" />
+              </div>
+            </div>
+
+            <button
+              onClick={handleAddClick}
+              className="h-12 px-6 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-success/20 border-b-4 border-emerald-700 transition-all active:scale-95 flex items-center gap-3"
+            >
+              <Plus className="w-4 h-4 stroke-[4]" />
+              Nouvelle entité
+            </button>
           </div>
-          {canManageEntities && (
-            <Button icon={<Plus className="w-5 h-5" />} onClick={handleAddClick}>
-              Ajouter une entité
-            </Button>
-          )}
         </div>
 
-        <Card>
-          <div className="mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Rechercher une entité..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-              />
-            </div>
+        {/* Search Block - Repertoire Style */}
+        <div className="bg-white border-2 border-emerald-100 p-2 rounded-xl flex flex-col lg:flex-row gap-2 transition-all hover:border-emerald-200 shadow-sm">
+          <div className="flex-1 relative group">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400 group-focus-within:text-emerald-600 transition-colors" />
+            <input
+              type="text"
+              placeholder="Rechercher une entité par nom ou code..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full h-12 pl-14 pr-6 bg-transparent text-sm font-bold text-emerald-950 outline-none placeholder:text-emerald-200"
+            />
           </div>
+        </div>
 
+        {/* Entities Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
           {loading ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            <div className="col-span-full flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
             </div>
           ) : filteredEntities.length === 0 ? (
-            <p className="text-center text-text-light py-8">Aucune entité trouvée.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-inactive">
-                <thead className="bg-primary/5">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-primary uppercase tracking-wider">
-                      Code
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-primary uppercase tracking-wider">
-                      Nom complet
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-primary uppercase tracking-wider">
-                      Date de création
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-bold text-primary uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-inactive">
-                  {filteredEntities.map((entity) => (
-                    <tr key={entity.id} className="hover:bg-primary/5 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-text">
-                        {entity.code}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-text-light">
-                        <div className="font-medium">{entity.name}</div>
-                        {entity.name !== entity.code && (
-                          <div className="text-xs text-text-light/70 mt-1">Code: {entity.code}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-light">
-                        {new Date(entity.created_at).toLocaleDateString('fr-FR')}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        {canManageEntities ? (
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              icon={<Edit className="w-4 h-4" />}
-                              onClick={() => handleEditClick(entity)}
-                            >
-                              Modifier
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              icon={<Trash2 className="w-4 h-4" />}
-                              onClick={() => handleDeleteClick(entity.id)}
-                              className="text-error hover:text-red-700"
-                            >
-                              Supprimer
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-text-light text-xs">Lecture seule</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="col-span-full text-center py-20 bg-white border-2 border-emerald-100 rounded-[2.5rem] shadow-sm">
+              <div className="flex flex-col items-center gap-4">
+                <div className={cn("p-6 rounded-full", error ? "bg-rose-50" : "bg-emerald-50")}>
+                  {error ? <X className="w-12 h-12 text-rose-300" /> : <Search className="w-12 h-12 text-emerald-200" />}
+                </div>
+                <div>
+                  <p className={cn("font-black uppercase text-xs tracking-[0.2em]", error ? "text-rose-600" : "text-emerald-800/40")}>
+                    {error ? 'Erreur de chargement' : 'Aucune entité trouvée'}
+                  </p>
+                  {error && (
+                    <button
+                      onClick={fetchEntities}
+                      className="mt-4 px-6 py-2 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-200 transition-all active:scale-95"
+                    >
+                      Réessayer
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
+          ) : (
+            filteredEntities.map((entity) => (
+              <div
+                key={entity.id}
+                className="bg-white border-2 border-emerald-100 p-6 rounded-2xl relative overflow-hidden group hover:border-emerald-300 transition-all duration-500 shadow-sm active:scale-95 flex flex-col items-center text-center"
+              >
+                {/* Decorative Colorful Glow */}
+                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-emerald-500/10 transition-colors" />
+                <div className="absolute bottom-0 left-0 w-20 h-20 bg-emerald-500/5 rounded-full -ml-10 -mb-10 blur-2xl group-hover:bg-emerald-500/10 transition-colors" />
+
+                <div className="relative z-10 w-full flex flex-col items-center">
+                  {/* Medium Logo Container */}
+                  <div className="relative w-20 h-20 mb-4 group-hover:scale-105 transition-all duration-500">
+                    <div className="absolute inset-0 bg-emerald-500/10 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {entity.logo_url ? (
+                      <div className="w-full h-full rounded-2xl overflow-hidden bg-white shadow-xl shadow-emerald-500/5 p-3 border-2 border-emerald-100 group-hover:border-emerald-300 flex items-center justify-center relative z-10 transition-colors">
+                        <Image
+                          src={entity.logo_url}
+                          alt={entity.name}
+                          width={60}
+                          height={60}
+                          className="object-contain"
+                          unoptimized
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full h-full rounded-2xl bg-emerald-50 border-2 border-emerald-100 flex items-center justify-center text-emerald-300 relative z-10 group-hover:border-emerald-300 transition-colors">
+                        <ImageIcon className="w-8 h-8" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mb-6 space-y-2">
+                    <h3 className="text-sm font-black text-emerald-950 tracking-tight leading-tight uppercase group-hover:text-emerald-600 transition-colors line-clamp-1 px-2">{entity.name}</h3>
+                    <div className="flex items-center justify-center">
+                      <span className="px-3 py-1 bg-emerald-950 text-white rounded-lg text-[9px] font-black uppercase tracking-[0.2em] leading-none shadow-lg shadow-emerald-900/20">
+                        {entity.code}
+                      </span>
+                    </div>
+                  </div>
+
+                  {canManageEntities ? (
+                    <div className="w-full pt-4 border-t border-emerald-50 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 duration-500">
+                      <button
+                        onClick={() => handleEditClick(entity)}
+                        className="flex-1 h-10 rounded-xl bg-emerald-50 text-emerald-600 hover:text-white hover:bg-emerald-600 transition-all font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        Editer
+                      </button>
+                      <button
+                        onClick={() => handleDeleteClick(entity.id)}
+                        className="h-10 w-10 rounded-xl bg-rose-50 text-rose-500 hover:text-white hover:bg-rose-500 transition-all flex items-center justify-center shadow-sm"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-full pt-4 border-t border-emerald-50">
+                      <span className="text-[8px] font-black text-emerald-800/20 uppercase tracking-[0.3em]">Consultation</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
           )}
-        </Card>
+        </div>
       </div>
 
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingEntity ? 'Modifier l&apos;entité' : 'Ajouter une entité'}
+        title={editingEntity ? "Editer l'entité" : "Ajouter une entité"}
+        size="md"
         footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
+          <div className="flex gap-4 pt-6 w-full">
+            <button
+              onClick={() => setIsModalOpen(false)}
+              className="flex-1 py-3 bg-white border-2 border-emerald-100 text-emerald-800 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-50 transition-all active:scale-95"
+            >
               Annuler
-            </Button>
-            <Button type="submit" form="entity-form" loading={loading}>
-              {editingEntity ? 'Mettre à jour' : 'Créer'}
-            </Button>
+            </button>
+            <button
+              type="submit"
+              form="entity-form"
+              disabled={loading}
+              className="flex-[2] py-3 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 shadow-xl shadow-success/20 border-b-4 border-emerald-700 transition-all active:scale-95 flex items-center justify-center gap-3"
+            >
+              {loading ? (editingEntity ? 'Mise à jour...' : 'Création...') : (editingEntity ? 'Enregistrer' : 'Créer l\'entité')}
+            </button>
           </div>
         }
       >
         <form id="entity-form" onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            label="Code *"
-            type="text"
-            value={formData.code}
-            onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() as EntityCode })}
-            required
-            placeholder="Ex: CBI, CEMC, ABS..."
-            maxLength={20}
-          />
-          <p className="text-xs text-text-light -mt-3 mb-4">Le code peut être modifié</p>
-          <Input
-            label="Nom complet *"
-            type="text"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            required
-            placeholder="Nom complet de l&apos;entité (ex: Compagnie Bancaire Internationale)"
-          />
-          <p className="text-xs text-text-light -mt-3 mb-4">Nom complet de l&apos;entité (non abrégé)</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1 sm:col-span-1">
+              <label className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest ml-1 flex items-center gap-2">
+                Code
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Ex: CBI"
+                value={formData.code}
+                onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() as EntityCode })}
+                className="w-full h-11 px-4 bg-emerald-50/50 border-2 border-emerald-100 rounded-xl text-sm font-black text-emerald-950 outline-none focus:border-emerald-500 transition-all placeholder:text-emerald-200"
+                maxLength={20}
+              />
+            </div>
 
-          {/* Branding Section */}
-          <div className="border-t pt-4 mt-4">
-            <h3 className="text-lg font-semibold text-text mb-4">Identité visuelle et informations</h3>
-            
+            <div className="space-y-1 sm:col-span-2">
+              <label className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest ml-1 flex items-center gap-2">
+                Nom de l&apos;entité
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Ex: Compagnie Bancaire Internationale"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full h-11 px-4 bg-emerald-50/50 border-2 border-emerald-100 rounded-xl text-sm font-black text-emerald-950 outline-none focus:border-emerald-500 transition-all placeholder:text-emerald-200"
+              />
+            </div>
+          </div>
+
+          <div className="border-t border-emerald-100 pt-6 mt-6">
+            <h3 className="text-xs font-black text-emerald-950 uppercase tracking-widest mb-6 flex items-center gap-2">
+              <ImageIcon className="w-4 h-4 text-emerald-400" /> Identité visuelle
+            </h3>
+
             {/* Logo */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Logo</label>
+            <div className="mb-4 space-y-2">
+              <label className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest ml-1">Logo officiel</label>
               {formData.logo_url ? (
-                <div className="relative w-32 h-32 rounded-lg border-2 border-gray-300 overflow-hidden bg-gray-100">
+                <div className="relative w-24 h-24 rounded-2xl border-2 border-emerald-100 overflow-hidden bg-white shadow-sm p-3 group/img">
                   <Image
                     src={formData.logo_url}
                     alt="Logo"
                     fill
-                    className="object-contain"
+                    className="object-contain p-3"
                     unoptimized
                   />
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, logo_url: '' })}
-                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                    className="absolute top-2 right-2 p-2 bg-rose-500 text-white rounded-xl shadow-lg opacity-0 group-hover/img:opacity-100 transition-all hover:scale-110"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               ) : (
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                  <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                  <span className="text-sm text-gray-500">Cliquez pour uploader</span>
+                <label className="flex flex-col items-center justify-center w-24 h-24 border-2 border-dashed border-emerald-100 rounded-2xl cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-all group relative overflow-hidden">
+                  <div className="absolute inset-0 bg-emerald-50/10 animate-pulse" />
+                  <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform relative z-10">
+                    <Upload className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <span className="text-[8px] font-black uppercase tracking-widest text-emerald-800/40 relative z-10 mt-1">Logo</span>
                   <input
                     type="file"
                     className="hidden"
@@ -415,29 +480,32 @@ export default function EntitiesPage() {
             </div>
 
             {/* Header */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">En-tête</label>
+            <div className="mb-4 space-y-2">
+              <label className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest ml-1">Bannière (Factures)</label>
               {formData.header_url ? (
-                <div className="relative w-full h-40 rounded-lg border-2 border-gray-300 overflow-hidden bg-gray-100">
+                <div className="relative w-full h-32 rounded-2xl border-2 border-emerald-100 overflow-hidden bg-white shadow-sm group/hdr">
                   <Image
                     src={formData.header_url}
                     alt="En-tête"
                     fill
-                    className="object-contain"
+                    className="object-contain p-2"
                     unoptimized
                   />
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, header_url: '' })}
-                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                    className="absolute top-4 right-4 p-2 bg-rose-500 text-white rounded-xl shadow-lg opacity-0 group-hover/hdr:opacity-100 transition-all hover:scale-110"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               ) : (
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                  <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                  <span className="text-sm text-gray-500">Cliquez pour uploader</span>
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-emerald-100 rounded-2xl cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-all group relative overflow-hidden">
+                  <div className="absolute inset-0 bg-emerald-50/10 animate-pulse" />
+                  <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform relative z-10">
+                    <Upload className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-800/40 relative z-10 mt-2">Uploader l&apos;en-tête (Factures)</span>
                   <input
                     type="file"
                     className="hidden"
@@ -453,29 +521,32 @@ export default function EntitiesPage() {
             </div>
 
             {/* Watermark */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Filigrane (Logo)</label>
+            <div className="mb-4 space-y-2">
+              <label className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest ml-1">Filigrane (Protection)</label>
               {formData.watermark_url ? (
-                <div className="relative w-32 h-32 rounded-lg border-2 border-gray-300 overflow-hidden bg-gray-100 opacity-50">
+                <div className="relative w-24 h-24 rounded-2xl border-2 border-emerald-100 overflow-hidden bg-white opacity-50 shadow-sm p-3 group/wm">
                   <Image
                     src={formData.watermark_url}
                     alt="Filigrane"
                     fill
-                    className="object-contain"
+                    className="object-contain p-3"
                     unoptimized
                   />
                   <button
                     type="button"
                     onClick={() => setFormData({ ...formData, watermark_url: '' })}
-                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                    className="absolute top-2 right-2 p-2 bg-rose-500 text-white rounded-xl shadow-lg opacity-0 group-hover/wm:opacity-100 transition-all hover:scale-110"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               ) : (
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                  <Upload className="w-8 h-8 text-gray-400 mb-2" />
-                  <span className="text-sm text-gray-500">Cliquez pour uploader</span>
+                <label className="flex flex-col items-center justify-center w-24 h-24 border-2 border-dashed border-emerald-100 rounded-2xl cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-all group relative overflow-hidden">
+                  <div className="absolute inset-0 bg-emerald-50/10 animate-pulse" />
+                  <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform relative z-10">
+                    <Upload className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <span className="text-[8px] font-black uppercase tracking-widest text-emerald-800/40 relative z-10 mt-1">Filigrane</span>
                   <input
                     type="file"
                     className="hidden"
@@ -491,23 +562,17 @@ export default function EntitiesPage() {
             </div>
 
             {/* Footer Text */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Texte du footer (Adresse et contacts) *
+            <div className="mb-2 space-y-2">
+              <label className="text-[10px] font-black text-emerald-800/40 uppercase tracking-widest ml-1">
+                Contact & Pied de page
               </label>
               <textarea
                 value={formData.footer_text}
                 onChange={(e) => setFormData({ ...formData, footer_text: e.target.value })}
-                rows={5}
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary"
-                placeholder={`Adresse complète du bureau
-Téléphone: +243 XXX XXX XXX
-Email: contact@example.com
-Site web: www.example.com`}
+                rows={3}
+                className="w-full bg-emerald-50/50 border-2 border-emerald-100 rounded-xl px-4 py-3 text-sm font-bold text-emerald-950 outline-none focus:border-emerald-500 transition-all resize-none placeholder:text-emerald-200"
+                placeholder="Adresse, Téléphone, Email..."
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Ce texte sera affiché dans le footer des factures. Incluez l&apos;adresse et les contacts.
-              </p>
             </div>
           </div>
         </form>
@@ -517,9 +582,11 @@ Site web: www.example.com`}
         isOpen={deleteModal.isOpen}
         onClose={deleteModal.close}
         onConfirm={handleDeleteConfirm}
-        title="Confirmer la suppression"
-        message="Êtes-vous sûr de vouloir supprimer cette entité ? Cette action est irréversible et supprimera toutes les données associées."
+        title="Supprimer ?"
+        message="Confirmez-vous la suppression définitive de cette entité et de ses données ?"
         variant="danger"
+        confirmText="Supprimer"
+        cancelText="Annuler"
       />
     </AppLayout>
   );

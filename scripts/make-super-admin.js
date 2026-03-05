@@ -15,11 +15,11 @@ const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Charger .env.local (script dir ou cwd)
-const envLocal = path.join(__dirname, '..', '.env.local');
-const envCwd = path.join(process.cwd(), '.env.local');
-dotenv.config({ path: envLocal });
-dotenv.config({ path: envCwd });
+// Charger .env et .env.local
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
+dotenv.config({ path: path.join(process.cwd(), '.env') });
+dotenv.config({ path: path.join(process.cwd(), '.env.local') });
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;

@@ -1,8 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from '@/components/providers/Providers';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
 
 export const metadata: Metadata = {
   title: 'ISIRO GROUP - Holding Management Platform',
@@ -35,19 +33,6 @@ export default function RootLayout({
       <body>
         <Providers>
           {children}
-          <ToastContainer
-            position="top-center"
-            autoClose={3000}
-            hideProgressBar={false}
-            newestOnTop={false}
-            closeOnClick
-            rtl={false}
-            pauseOnFocusLoss
-            draggable
-            pauseOnHover
-            className="!top-16 sm:!top-20"
-            toastClassName="!rounded-lg !shadow-lg"
-          />
         </Providers>
       </body>
     </html>

@@ -6,7 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { createSupabaseClient } from '@/services/supabaseClient';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 
@@ -14,6 +14,7 @@ export default function ClientDetailPage() {
   const params = useParams();
   const supabase = createSupabaseClient();
   const [row, setRow] = useState<any>(null);
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

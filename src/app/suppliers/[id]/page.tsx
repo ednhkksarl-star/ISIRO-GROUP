@@ -6,7 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { createSupabaseClient } from '@/services/supabaseClient';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 
@@ -14,6 +14,7 @@ export default function SupplierDetailPage() {
   const params = useParams();
   const supabase = createSupabaseClient();
   const [row, setRow] = useState<any>(null);
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,10 +38,10 @@ export default function SupplierDetailPage() {
         <h1 className="text-2xl font-bold text-text">Fiche fournisseur</h1>
         <Card>
           <dl className="grid gap-3">
-            <div><dt className="text-sm text-text-light">Nom</dt><dd className="font-medium">{row.name || '—'}</dd></div>
-            <div><dt className="text-sm text-text-light">Téléphone</dt><dd>{row.phone || '—'}</dd></div>
-            <div><dt className="text-sm text-text-light">Email</dt><dd>{row.email || '—'}</dd></div>
-            <div><dt className="text-sm text-text-light">Adresse</dt><dd className="whitespace-pre-wrap">{row.address || '—'}</dd></div>
+            <div><dt className="text-sm text-text-light">Nom</dt><dd className="font-medium">{row.name || "—"}</dd></div>
+            <div><dt className="text-sm text-text-light">Téléphone</dt><dd>{row.phone || "—"}</dd></div>
+            <div><dt className="text-sm text-text-light">Email</dt><dd>{row.email || "—"}</dd></div>
+            <div><dt className="text-sm text-text-light">Adresse</dt><dd className="whitespace-pre-wrap">{row.address || "—"}</dd></div>
             {row.notes && <div><dt className="text-sm text-text-light">Notes</dt><dd className="whitespace-pre-wrap">{row.notes}</dd></div>}
           </dl>
         </Card>

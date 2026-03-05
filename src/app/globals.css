@@ -9,6 +9,7 @@
     opacity: 0;
     transform: scale(0.9);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -16,18 +17,24 @@
 }
 
 @keyframes pulse-slow {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.8;
   }
 }
 
 @keyframes bounce-light {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-5px);
   }
@@ -46,18 +53,24 @@
 }
 
 :root {
-  --primary: #00A896;
-  --primary-dark: #00897B;
-  --primary-light: #4DB6AC;
-  --background: #F5F7FA;
-  --card-bg: #FFFFFF;
-  --inactive: #E0E0E0;
-  --text: #1A1A1A;
-  --text-light: #6B7280;
-  --success: #10B981;
-  --error: #EF4444;
-  --warning: #F59E0B;
+  --primary: #00C896;
+  --primary-dark: #008F6B;
+  --primary-light: #5EEAD4;
+  --background: #ffffff;
+  --card-bg: #ffffff;
+  --inactive: #F1F5F9;
+  --text: #064E3B;
+  --text-light: #475569;
+  --success: #00C896;
+  --error: #FF4D4D;
+  --warning: #FFD700;
+  --accent: #FFD700;
   --info: #3B82F6;
+
+  /* Clean UI Tokens */
+  --border-color: rgba(0, 200, 150, 0.15);
+  --border-radius: 12px;
+  --sidebar-w: 280px;
 }
 
 * {
@@ -68,8 +81,61 @@
 body {
   font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   color: var(--text);
-  background: linear-gradient(135deg, #F5F7FA 0%, #E8EDF2 100%);
+  background: #f8fafc;
   min-height: 100vh;
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white border border-[var(--border-color)] transition-all duration-300;
+    border-radius: var(--border-radius);
+  }
+
+  .glass-header {
+    @apply bg-white border-b border-[var(--border-color)] sticky top-0 z-50;
+  }
+
+  .btn-modern {
+    @apply relative overflow-hidden px-6 py-2.5 font-bold tracking-tight transition-all duration-200 active:scale-95 border-2;
+    border-radius: var(--border-radius);
+  }
+}
+
+/* Fluid Animations */
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.stagger-1 {
+  animation-delay: 50ms;
+}
+
+.stagger-2 {
+  animation-delay: 100ms;
+}
+
+.stagger-3 {
+  animation-delay: 150ms;
+}
+
+.stagger-4 {
+  animation-delay: 200ms;
+}
+
+.stagger-5 {
+  animation-delay: 250ms;
 }
 
 @layer utilities {
@@ -83,6 +149,7 @@ body {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -93,6 +160,7 @@ body {
     transform: translateY(-20px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -104,6 +172,7 @@ body {
     transform: scale(0.95);
     opacity: 0;
   }
+
   to {
     transform: scale(1);
     opacity: 1;
@@ -120,6 +189,110 @@ body {
 
 .animate-scale-in {
   animation: scaleIn 0.3s ease-out;
+}
+
+/* Login page animations */
+@keyframes loginFloat {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -30px) scale(1.05);
+  }
+
+  66% {
+    transform: translate(-20px, 20px) scale(0.95);
+  }
+}
+
+@keyframes loginGlow {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes loginSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-login-float {
+  animation: loginFloat 20s ease-in-out infinite;
+}
+
+.animate-login-glow {
+  animation: loginGlow 4s ease-in-out infinite;
+}
+
+.animate-login-slide-up {
+  animation: loginSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes loginBubble {
+
+  0%,
+  100% {
+    transform: translateY(0) translateX(0) scale(1);
+    opacity: 0.15;
+  }
+
+  25% {
+    transform: translateY(-30px) translateX(15px) scale(1.1);
+    opacity: 0.25;
+  }
+
+  50% {
+    transform: translateY(-60px) translateX(-10px) scale(0.95);
+    opacity: 0.2;
+  }
+
+  75% {
+    transform: translateY(-40px) translateX(20px) scale(1.05);
+    opacity: 0.22;
+  }
+}
+
+@keyframes loginBubble2 {
+
+  0%,
+  100% {
+    transform: translateY(0) translateX(0) scale(1);
+    opacity: 0.1;
+  }
+
+  33% {
+    transform: translateY(-50px) translateX(-20px) scale(1.15);
+    opacity: 0.2;
+  }
+
+  66% {
+    transform: translateY(-25px) translateX(25px) scale(0.9);
+    opacity: 0.15;
+  }
+}
+
+.animate-login-bubble {
+  animation: loginBubble 12s ease-in-out infinite;
+}
+
+.animate-login-bubble-2 {
+  animation: loginBubble2 15s ease-in-out infinite;
 }
 
 /* Card hover effect */
@@ -183,27 +356,28 @@ table button:hover {
   body {
     font-size: 14px;
   }
-  
+
   /* Empêcher le débordement horizontal */
-  html, body {
+  html,
+  body {
     overflow-x: hidden;
     width: 100%;
     position: relative;
   }
-  
+
   /* Assurer que les conteneurs ne débordent pas */
   * {
     max-width: 100%;
     box-sizing: border-box;
   }
-  
+
   /* Améliorer la lisibilité sur mobile */
   table {
     font-size: 12px;
   }
-  
+
   /* Réduire les espacements sur très petits écrans */
-  .space-y-6 > * + * {
+  .space-y-6>*+* {
     margin-top: 1rem;
   }
 }
@@ -213,37 +387,43 @@ table button:hover {
   * {
     -webkit-tap-highlight-color: transparent;
   }
-  
-  button, a {
+
+  button,
+  a {
     -webkit-tap-highlight-color: rgba(0, 168, 150, 0.1);
   }
-  
+
   /* Améliorer les tableaux sur mobile */
   table {
     font-size: 12px;
   }
-  
-  th, td {
+
+  th,
+  td {
     padding: 0.5rem 0.75rem !important;
   }
-  
+
   /* Réduire les espacements dans les cartes */
-  .space-y-6 > * + * {
+  .space-y-6>*+* {
     margin-top: 1rem;
   }
-  
-  .space-y-4 > * + * {
+
+  .space-y-4>*+* {
     margin-top: 0.75rem;
   }
-  
+
   /* Améliorer les boutons sur mobile */
   button {
-    min-height: 44px; /* Taille minimale recommandée pour le touch */
+    min-height: 44px;
+    /* Taille minimale recommandée pour le touch */
   }
-  
+
   /* Améliorer les inputs sur mobile */
-  input, select, textarea {
-    font-size: 16px; /* Évite le zoom automatique sur iOS */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+    /* Évite le zoom automatique sur iOS */
     min-height: 44px;
   }
 }
@@ -254,9 +434,42 @@ table button:hover {
     padding-left: max(0px, env(safe-area-inset-left));
     padding-right: max(0px, env(safe-area-inset-right));
   }
-  
+
   .safe-area-bottom {
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 }
 
+/* ─── Custom Toast Animations ─────────────────────────────────────────────── */
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(100% + 1.5rem)) scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(calc(100% + 1.5rem)) scale(0.9);
+  }
+}
+
+.animate-toast-in {
+  animation: toastIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-toast-out {
+  animation: toastOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}

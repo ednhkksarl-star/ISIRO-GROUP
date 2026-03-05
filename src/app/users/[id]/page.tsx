@@ -8,7 +8,7 @@ import { createSupabaseClient } from '@/services/supabaseClient';
 import { ArrowLeft, User as UserIcon } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { toast } from 'react-toastify';
+import { useToast } from '@/components/ui/Toast';
 import Badge from '@/components/ui/Badge';
 import Card from '@/components/ui/Card';
 import type { Database } from '@/types/database.types';
@@ -19,6 +19,7 @@ export default function UserDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { profile } = useAuth();
+  const toast = useToast();
   const supabase = createSupabaseClient();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
