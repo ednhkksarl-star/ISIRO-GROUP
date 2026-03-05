@@ -3,7 +3,7 @@
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuth } from '@/components/providers/Providers';
 import Link from 'next/link';
-import { User, Shield, Bell, Lock, DollarSign, ArrowRight, Settings } from 'lucide-react';
+import { User, Shield, Bell, Lock, DollarSign, ArrowRight, Settings, Database } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
 export default function SettingsPage() {
@@ -30,6 +30,14 @@ export default function SettingsPage() {
       description: 'Protégez votre compte et modifiez votre mot de passe',
       icon: Lock,
       href: '/settings/security',
+      color: 'emerald',
+    },
+    {
+      title: 'Export / Import des données',
+      description: 'Exporter ou importer toutes les données de l\'application (sauvegarde, migration)',
+      icon: Database,
+      href: '/settings/data-export-import',
+      roles: ['SUPER_ADMIN_GROUP'],
       color: 'emerald',
     },
     {
